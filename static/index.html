@@ -245,6 +245,22 @@
   .code-row input:focus { border-color: rgba(175,82,222,.65); }
   .w-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
+  /* ---------- migrate ---------- */
+  .mig-table { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
+  .mig-row {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(0,0,0,.28); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 12px; cursor: pointer; transition: border-color .18s ease, background .18s ease;
+  }
+  .mig-row:hover { border-color: rgba(255,255,255,.2); background: rgba(0,0,0,.4); }
+  .mig-row input[type=checkbox] { accent-color: var(--accent-2); width: 16px; height: 16px; flex: none; cursor: pointer; }
+  .mig-row input[type=checkbox]:disabled { opacity: .35; cursor: not-allowed; }
+  .mig-idx { font-family: var(--mono); font-size: 11px; color: #565670; width: 22px; flex: none; text-align: right; }
+  .mig-t { flex: 1; min-width: 0; }
+  .mig-t b { font-size: 13px; display: block; }
+  .muted-sm { color: var(--muted); font-size: 11.5px; }
+  .mig-row .badge { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* ---------- toasts ---------- */
   #toasts { position: fixed; top: 18px; right: 18px; z-index: 50; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
   .toast {
@@ -282,6 +298,7 @@
       <div class="pill" id="pill-ffmpeg"><span class="dot"></span>FFmpeg</div>
       <div class="pill" id="pill-cookies"><span class="dot"></span>Cookies</div>
       <div class="pill" id="pill-wrapper"><span class="dot"></span>Wrapper</div>
+      <div class="pill" id="pill-flac"><span class="dot"></span>Auto-FLAC</div>
     </div>
   </header>
 
@@ -388,7 +405,18 @@
   </section>
 
   <section class="card">
-    <h2>5 · Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
+    <h2>5 · Migrate from Spotify / YouTube Music</h2>
+    <textarea id="migrate-url" placeholder="Paste a Spotify album/playlist link or a YouTube Music album/playlist link…&#10;https://open.spotify.com/album/5vkqYmiPBYLaalcmjujWxK&#10;https://music.youtube.com/playlist?list=OLAK5uy_…" style="min-height:64px"></textarea>
+    <div class="row">
+      <button class="btn" id="btn-migrate-preview"><span id="migrate-label">Preview &amp; match</span></button>
+      <button class="btn ghost" id="btn-migrate-download" style="display:none">⬇ Download selected</button>
+      <span class="hint" style="align-self:center">Tracks are matched on Apple Music automatically — matched ones are ready to download as ALAC.</span>
+    </div>
+    <div id="migrate-result" style="display:none; margin-top:14px"></div>
+  </section>
+
+  <section class="card">
+    <h2>6 · Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
     <div class="jobs" id="jobs"><div class="empty">Nothing yet — paste links above and hit <b>Download</b>.</div></div>
   </section>
 
@@ -411,6 +439,79 @@ const state = {
   pollTimer: null,
   expanded: new Set(),
 };
+
+/* ---------------- migrate ---------------- */
+let migrateState = { urls: [] };
+
+function migrateTable(data) {
+  const box = $("migrate-result");
+  box.style.display = "block";
+  const badge = data.source === "spotify" ? "Spotify" : "YouTube";
+  const head = `<div class="w-banner ${data.matched === data.total && data.total > 0 ? "ok" : data.matched > 0 ? "warn" : "err"}">
+      <b>${escapeHtml(badge)} · ${escapeHtml(data.title)}</b> — ${data.matched}/${data.total} tracks matched on Apple Music.
+      ${data.unmatched > 0 ? "<br>Unmatched rows are left unchecked — download them manually via the Apple Music URL if you want." : ""}
+    </div>`;
+  const rows = data.tracks.map((t, i) => {
+    const m = t.match;
+    const checked = m ? "checked" : "";
+    const disabled = m ? "" : "disabled";
+    const right = m
+      ? `<span class="badge lossless" style="color:var(--ok);border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.1)">→ ${escapeHtml(m.apple_artist)} — ${escapeHtml(m.apple_name)}</span>`
+      : `<span class="badge">no match</span>`;
+    return `<label class="mig-row">
+      <input type="checkbox" class="mig-check" data-i="${i}" ${checked} ${disabled}>
+      <span class="mig-idx">${i + 1}</span>
+      <span class="mig-t"><b>${escapeHtml(t.title)}</b><br><span class="muted-sm">${escapeHtml(t.artist || "—")}</span></span>
+      ${right}
+    </label>`;
+  }).join("");
+  box.innerHTML = head + `<div class="mig-table">${rows}</div>`;
+  migrateState.urls = data.tracks.map(t => (t.match ? t.match.apple_url : null));
+  $("btn-migrate-download").style.display = data.matched > 0 ? "block" : "none";
+}
+
+async function previewMigrate() {
+  const url = $("migrate-url").value.trim();
+  if (!url) { toast("Paste a Spotify or YouTube Music link first.", "err"); $("migrate-url").focus(); return; }
+  const btn = $("btn-migrate-preview");
+  btn.disabled = true;
+  $("migrate-label").textContent = "Matching…";
+  $("btn-migrate-download").style.display = "none";
+  try {
+    const res = await fetch("/api/migrate/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not preview that link.", "err"); $("migrate-result").style.display = "none"; return; }
+    migrateTable(data);
+    toast(`Found ${data.total} tracks, ${data.matched} matched ✓`, "ok");
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { btn.disabled = false; $("migrate-label").textContent = "Preview & match"; }
+}
+
+async function downloadMigrated() {
+  const urls = [];
+  document.querySelectorAll(".mig-check:checked").forEach(cb => {
+    const u = migrateState.urls[parseInt(cb.dataset.i, 10)];
+    if (u) urls.push(u);
+  });
+  if (!urls.length) { toast("Select at least one matched track.", "err"); return; }
+  const btn = $("btn-migrate-download");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/download", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls, codec: currentCodec() }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not start downloads.", "err"); return; }
+    toast(`Queued ${data.job.url_count} downloads ✓`, "ok");
+    state.expanded.add(data.job.id);
+    await refreshJobs();
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { btn.disabled = false; }
+}
 
 /* ---------------- toast ---------------- */
 function toast(msg, type = "") {
@@ -440,6 +541,11 @@ function renderPills(status) {
   const wrapper = $("pill-wrapper");
   wrapper.className = "pill " + (status.wrapper_enabled ? "ok" : "");
   wrapper.innerHTML = `<span class="dot"></span>Wrapper ${status.wrapper_enabled ? "on" : "off"}`;
+
+  const flac = $("pill-flac");
+  flac.className = "pill " + (status.convert_to_flac ? "ok" : "");
+  flac.innerHTML = `<span class="dot"></span>Auto-FLAC ${status.convert_to_flac ? "on" : "off"}`;
+  flac.title = "Converts new ALAC downloads to FLAC automatically";
 
   const hint = $("wrapper-hint");
   if (status.wrapper_enabled && !status.cookies_exists) {
@@ -794,6 +900,9 @@ async function convertToFlac() {
 }
 
 $("btn-download").addEventListener("click", download);
+$("btn-migrate-preview").addEventListener("click", previewMigrate);
+$("btn-migrate-download").addEventListener("click", downloadMigrated);
+$("migrate-url").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) previewMigrate(); });
 $("btn-convert").addEventListener("click", convertToFlac);
 $("btn-settings-toggle").addEventListener("click", () => $("settings").classList.toggle("open"));
 $("w-submit").addEventListener("click", submitCode);

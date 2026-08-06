@@ -177,6 +177,34 @@ With Settings → **"Auto-convert ALAC → FLAC"** enabled:
 
 ---
 
+## 4.5 The migration pipeline (Spotify / YouTube Music → Apple Music)
+
+Card "5 · Migrate" in the UI turns a foreign-service link into Apple Music
+downloads:
+
+1. **Resolve** (`migrate.py::preview`):
+   - **Spotify** — `open.spotify.com/embed/{album|playlist}/{id}` renders the
+     track list server-side; its `__NEXT_DATA__` JSON is parsed for
+     `title`/`subtitle` (artists) per track. No auth.
+   - **YouTube / YouTube Music** — `yt-dlp` (venv) is invoked in flat mode
+     (`extract_flat`, `skip_download`): it only reads playlist/album metadata,
+     never downloads audio. Titles are normalized ("Artist — Song [HD]" →
+     artist/title).
+2. **Match** — each track is searched on the iTunes Search API
+   (`itunes.apple.com/search?entity=song`). A score rewards an exact title
+   match (+3) and an artist match (+2); punctuation is normalized so
+   "Weird Fishes/Arpeggi" matches "Weird Fishes / Arpeggi". Tracks scoring ≥3
+   are considered matched; the Apple `trackViewUrl` is returned.
+3. **Download** — the UI hands the matched Apple Music URLs to the existing
+   `/api/download` endpoint, so everything flows through the normal gamdl
+   pipeline (ALAC via wrapper, auto-FLAC, lyrics, tags).
+
+Errors are surfaced per-track ("no match") and the user can uncheck rows before
+queuing. Both sources are metadata-only — no media is ever downloaded from
+Spotify or YouTube.
+
+---
+
 ## 5. The web app
 
 - Flask + `waitress` on `127.0.0.1:8741` (loopback only — not exposed to your LAN).
@@ -190,7 +218,17 @@ With Settings → **"Auto-convert ALAC → FLAC"** enabled:
 
 ---
 
-## 6. One-click boot (`Start Music High Res.command`)
+## 6. One-click boot
+
+Two launchers exist:
+
+- **`Start Music High Res.command`** — Terminal-based boot.
+- **`Music High Res.app`** (built by `./make_app.sh`) — a real macOS app bundle
+  with a Dock icon. Its `Contents/MacOS/MusicHighRes` launcher boots the stack
+  then opens the UI in a standalone app-style window via
+  `open -na "<browser>" --args --app=http://127.0.0.1:8741` (Brave, then
+  Chrome/Edge/Arc, then Safari). Killing the app (right-click → Quit) stops the
+  server too.
 
 After a reboot, one double-click:
 1. **Docker Desktop** — if the daemon isn't up, launches the app and polls up to

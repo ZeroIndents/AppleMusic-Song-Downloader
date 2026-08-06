@@ -69,12 +69,18 @@ gamdl logs in as *you* using your browser's Apple Music session cookies.
 
 ## Step 2 — Start the app
 
-```bash
-./setup.sh                        # one-time (creates .venv + dependencies)
-./Start\ Music\ High\ Res.command # double-click me, or run in Terminal
-```
+Two ways to launch — pick your favourite:
 
-→ Open **http://127.0.0.1:8741**
+- **Like a normal Mac app** (recommended): run `./make_app.sh` once, then
+  double-click **`Music High Res.app`** in Finder. It gets a Dock icon and opens
+  the UI in a standalone app-style window. *(The app stays in the Dock while it
+  runs; right-click → Quit to stop it.)*
+- **Classic**: double-click `Start Music High Res.command`, or run
+  `./setup.sh` then `.venv/bin/python app.py` in a Terminal.
+
+Both boot Docker + the ALAC wrapper automatically when needed.
+
+→ UI: **http://127.0.0.1:8741**
 
 ### Using the web app
 1. Paste Apple Music links — songs, albums, playlists, artists, music videos — one per line.
@@ -126,6 +132,24 @@ in Docker and needs the Apple Music **Android** libraries (same Apple ID).
 > a symbol, so ALAC fails with `KDProcessResponseCKC status: -42812`. This repo
 > ships the fix as **`./fix_wrapper_libs.sh`** (swaps 7 `.so` files with working
 > builds and rebuilds). Apply it after `setup_wrapper.sh` if ALAC downloads fail.
+
+---
+
+## Step 3.5 — Migrate albums/playlists from Spotify or YouTube Music
+
+Have an album on Spotify or a playlist on YouTube Music you want in Apple
+Music? No need to re-find every track by hand:
+
+1. In the app, open **"5 · Migrate from Spotify / YouTube Music"**.
+2. Paste a Spotify album/playlist link or a YouTube / YouTube Music
+   album/playlist link.
+3. Hit **Preview & match** — the app reads the track list (Spotify embed page /
+   yt-dlp), then matches each track against the Apple Music catalog.
+4. Ticked rows are ready — hit **⬇ Download selected** to grab them all as
+   lossless ALAC (or your chosen codec).
+
+No API keys required: Spotify's public embed page and yt-dlp both expose
+metadata only; matching uses the public iTunes Search API.
 
 ---
 

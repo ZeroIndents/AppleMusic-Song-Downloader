@@ -25,6 +25,9 @@ data/
 *.log
 .DS_Store
 
+# ── Generated app bundle (rebuild with ./make_app.sh) ─────────────────
+Music High Res.app/
+
 # ── Editor / OS ────────────────────────────────────────────────────────
 .vscode/
 .idea/

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 import wrapperctl
+import migrate
 from downloader import (
     PROJECT_DIR,
     Config,
@@ -140,6 +141,22 @@ def api_wrapper_2fa():
 @app.post("/api/wrapper/restart")
 def api_wrapper_restart():
     return jsonify(wrapperctl.restart_login())
+
+
+@app.post("/api/migrate/preview")
+def api_migrate_preview():
+    """Resolve a Spotify / YouTube Music link and match its tracks on Apple Music."""
+    body = request.get_json(silent=True) or {}
+    url = str(body.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Paste a Spotify or YouTube Music link."}), 400
+    try:
+        result = migrate.preview(url)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # network / upstream hiccups
+        return jsonify({"ok": False, "error": f"Could not read that link: {e}"}), 502
+    return jsonify({"ok": True, **result})
 
 
 @app.post("/api/convert")
