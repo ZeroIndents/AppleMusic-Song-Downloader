@@ -1,0 +1,33 @@
+# ── SECRETS & CREDENTIALS (never commit these) ─────────────────────────
+cookies.txt
+music.apple.com_cookies.txt
+*.cookies.txt
+wrapper-v2/.env
+
+# ── The wrapper: cloned repo, extracted Android libs, cached Apple session ──
+wrapper-v2/
+wol-wrapper/
+wrapper-v2/data/
+
+# ── Android APKs (large binaries) ──────────────────────────────────────
+*.apk
+*.apkm
+*.apks
+
+# ── Python ─────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ── Local state / logs ─────────────────────────────────────────────────
+data/
+*.log
+.DS_Store
+
+# ── Editor / OS ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── gamdl scratch (encrypted temp downloads) ────────────────────
+gamdl_temp_*/

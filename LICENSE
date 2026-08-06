@@ -1,0 +1,44 @@
+AppleMusic Song Downloader — LICENSE
+====================================
+
+Copyright (c) 2026 Gavin Joseph (gavinjoseph) and contributors.
+Core download engine: gamdl by glomatico (https://github.com/glomatico/gamdl),
+used under its own license; see the CREDITS section of README.md.
+
+TERMS OF USE
+------------
+
+This software is provided for PERSONAL, NON-COMMERCIAL, EXPERIMENTAL USE ONLY.
+
+1. PERMITTED USES
+   - Personal, private use on your own devices.
+   - Personal experiments, learning, and hobby projects.
+   - Private study and modification of the source code for personal use.
+
+2. PROHIBITED USES
+   - ANY COMMERCIAL USE. You may NOT sell, license, rent, lease, or otherwise
+     monetize this software, in whole or in part, directly or indirectly.
+   - Use as part of a commercial product, service, or business, including
+     SaaS, hosting, or consulting offerings.
+   - Redistribution of downloaded media content. This software is intended
+     for use with content you are already entitled to stream under your own
+     active Apple Music subscription, for your personal library only.
+   - Removal, alteration, or obscuring of attribution to the original
+     authors (see CREDITS in README.md).
+
+3. DISCLAIMER
+   THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+4. PLATFORM COMPLIANCE
+   Use of this software must comply with the Apple Media Services Terms and
+   Conditions and all applicable laws in your jurisdiction. This software is
+   provided for experimental/personal interoperability purposes. If Apple or
+   any rightsholder objects to this project's existence, it will be removed
+   or modified accordingly. This license intentionally grants NO commercial
+   rights precisely to keep the project in the experimental/personal space.

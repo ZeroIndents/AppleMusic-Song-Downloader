@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music High Res — Apple Music grabber</title>
+<style>
+  :root {
+    --bg: #0d0d14;
+    --bg-2: #14141f;
+    --panel: rgba(255,255,255,.045);
+    --panel-2: rgba(255,255,255,.07);
+    --border: rgba(255,255,255,.09);
+    --text: #f2f2f7;
+    --muted: #9b9baa;
+    --accent: #fa2d48;
+    --accent-2: #af52de;
+    --accent-3: #5e5ce6;
+    --ok: #30d158;
+    --warn: #ffd60a;
+    --err: #ff453a;
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(94,92,230,.16), transparent 60%),
+      radial-gradient(900px 500px at -10% 0%, rgba(250,45,72,.12), transparent 55%),
+      var(--bg);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- layout ---------- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 22px 80px; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 26px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 14px; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
+    display: grid; place-items: center; font-weight: 800; font-size: 20px;
+    box-shadow: 0 6px 24px rgba(175,82,222,.35);
+  }
+  .brand h1 { font-size: 20px; letter-spacing: -.2px; }
+  .brand p { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; padding: 6px 12px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    transition: all .18s ease;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #555; }
+  .pill.ok { color: var(--text); }
+  .pill.ok .dot { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.8); }
+  .pill.warn .dot { background: var(--warn); box-shadow: 0 0 8px rgba(255,214,10,.7); }
+  .pill.bad .dot { background: var(--err); }
+  .pill .val { font-family: var(--mono); font-size: 11px; }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 22px;
+    margin-bottom: 18px;
+    backdrop-filter: blur(12px);
+    transition: border-color .2s ease;
+  }
+  .card h2 {
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.4px; color: var(--muted); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ---------- url input ---------- */
+  textarea {
+    width: 100%; min-height: 118px; resize: vertical;
+    background: rgba(0,0,0,.35); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    font-family: var(--mono); font-size: 13px; line-height: 1.65;
+    padding: 14px 16px; outline: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  textarea:focus {
+    border-color: rgba(175,82,222,.65);
+    box-shadow: 0 0 0 3px rgba(175,82,222,.18);
+  }
+  textarea::placeholder { color: #5c5c6e; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 9px; }
+  .hint code {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; font-family: var(--mono); font-size: 11px;
+  }
+
+  /* ---------- quality segmented control ---------- */
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
+  .seg {
+    display: flex; gap: 4px; background: rgba(0,0,0,.3);
+    border: 1px solid var(--border); border-radius: 12px; padding: 4px;
+    flex-wrap: wrap;
+  }
+  .seg button {
+    appearance: none; border: 0; cursor: pointer;
+    background: transparent; color: var(--muted);
+    font: 600 12.5px var(--sans); padding: 8px 14px; border-radius: 9px;
+    transition: all .18s ease;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; box-shadow: 0 3px 14px rgba(250,45,72,.35);
+  }
+
+  .btn {
+    appearance: none; border: 0; cursor: pointer;
+    font: 600 14px var(--sans); color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2) 60%, var(--accent-3));
+    padding: 12px 26px; border-radius: 12px;
+    box-shadow: 0 6px 22px rgba(175,82,222,.3);
+    transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
+    display: inline-flex; align-items: center; gap: 9px;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 9px 28px rgba(175,82,222,.42); }
+  .btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.ghost {
+    background: var(--panel-2); border: 1px solid var(--border);
+    box-shadow: none; color: var(--text); font-weight: 500;
+  }
+  .btn.ghost:hover:not(:disabled) { filter: brightness(1.2); box-shadow: none; }
+  .btn.small { padding: 7px 14px; font-size: 12.5px; border-radius: 9px; }
+
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%; flex: none;
+    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- settings drawer ---------- */
+  .settings { display: none; }
+  .settings.open { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 22px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+  .field input[type=text], .field input[type=number], .field select {
+    width: 100%; background: rgba(0,0,0,.35); color: var(--text);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 9px 12px; font-size: 13px; font-family: var(--mono); outline: none;
+    transition: border-color .2s ease;
+  }
+  .field input:focus, .field select:focus { border-color: rgba(175,82,222,.65); }
+  .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .toggle input { display: none; }
+  .switch {
+    width: 40px; height: 23px; border-radius: 999px; background: #33334a;
+    position: relative; transition: background .2s ease; flex: none;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: transform .2s ease;
+  }
+  .toggle input:checked + .switch { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .toggle input:checked + .switch::after { transform: translateX(16px); }
+  .toggle span { font-size: 13px; color: var(--text); }
+  .settings-actions { grid-column: 1 / -1; display: flex; gap: 10px; }
+
+  /* ---------- jobs ---------- */
+  .jobs { display: flex; flex-direction: column; gap: 12px; }
+  .job {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px;
+    transition: border-color .2s ease;
+  }
+  .job:hover { border-color: rgba(255,255,255,.18); }
+  .job-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .job-status {
+    width: 9px; height: 9px; border-radius: 50%; flex: none;
+    background: #555; position: relative;
+  }
+  .job-status.running { background: var(--accent-2); animation: pulse 1.2s ease-in-out infinite; }
+  .job-status.queued { background: var(--warn); }
+  .job-status.done { background: var(--ok); }
+  .job-status.failed { background: var(--err); }
+  .job-status.cancelled { background: #777; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .job-title { font-size: 13.5px; font-weight: 600; }
+  .job-sub { font-size: 12px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+  .job-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    white-space: nowrap;
+  }
+  .badge.lossless { color: #e8b7ff; border-color: rgba(175,82,222,.4); background: rgba(175,82,222,.12); }
+  .job-urls { font-size: 12px; color: var(--muted); margin-top: 9px; font-family: var(--mono); word-break: break-all; }
+  .job-log {
+    margin-top: 10px; background: rgba(0,0,0,.42); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 13px; font-family: var(--mono); font-size: 11.5px;
+    line-height: 1.7; max-height: 190px; overflow-y: auto; display: none;
+  }
+  .job-log.show { display: block; }
+  .job-log .lvl-ERROR, .job-log .lvl-CRITICAL { color: var(--err); }
+  .job-log .lvl-WARNING { color: var(--warn); }
+  .job-log .lvl-INFO { color: #c8c8d8; }
+  .job-log .ts { color: #565670; }
+  .job-log .lvl { color: #7a7a92; font-weight: 700; }
+  .job-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .link-btn {
+    background: none; border: 0; color: var(--accent-2); cursor: pointer;
+    font: 600 12px var(--sans); padding: 4px 2px;
+  }
+  .link-btn:hover { text-decoration: underline; }
+  .link-btn.danger { color: var(--err); }
+  .elapsed { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 26px 0; }
+  .empty b { color: var(--text); }
+
+  /* ---------- wrapper / login panel ---------- */
+  .w-state { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .w-banner {
+    font-size: 13px; line-height: 1.6; padding: 11px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: rgba(0,0,0,.28); color: #c8c8d8;
+    margin-bottom: 14px;
+  }
+  .w-banner.ok { border-color: rgba(48,209,88,.4); color: #b8ffd0; background: rgba(48,209,88,.08); }
+  .w-banner.warn { border-color: rgba(255,214,10,.4); color: #ffe9a3; background: rgba(255,214,10,.07); }
+  .w-banner.err { border-color: rgba(255,69,58,.45); color: #ffc1bd; background: rgba(255,69,58,.08); }
+  .code-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .code-row input {
+    width: 180px; background: rgba(0,0,0,.35); color: var(--text);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 12px; font-size: 20px; letter-spacing: 6px; text-align: center;
+    font-family: var(--mono); outline: none;
+  }
+  .code-row input:focus { border-color: rgba(175,82,222,.65); }
+  .w-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+
+  /* ---------- toasts ---------- */
+  #toasts { position: fixed; top: 18px; right: 18px; z-index: 50; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
+  .toast {
+    background: #1c1c2a; border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    animation: slidein .25s ease; display: flex; gap: 10px; align-items: flex-start;
+  }
+  .toast.err { border-color: rgba(255,69,58,.5); }
+  .toast.ok { border-color: rgba(48,209,88,.5); }
+  @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+  footer { margin-top: 40px; text-align: center; color: #5c5c6e; font-size: 12px; line-height: 1.8; }
+  footer code { font-family: var(--mono); font-size: 11px; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 18px 14px 60px; }
+    .card { padding: 16px; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="logo">♪</div>
+      <div>
+        <h1>Music High Res</h1>
+        <p>Apple Music → lossless ALAC, on demand</p>
+      </div>
+    </div>
+    <div class="pills" id="pills">
+      <div class="pill" id="pill-gamdl"><span class="dot"></span>gamdl <span class="val">…</span></div>
+      <div class="pill" id="pill-ffmpeg"><span class="dot"></span>FFmpeg</div>
+      <div class="pill" id="pill-cookies"><span class="dot"></span>Cookies</div>
+      <div class="pill" id="pill-wrapper"><span class="dot"></span>Wrapper</div>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>1 · Paste Apple Music links</h2>
+    <textarea id="urls" placeholder="https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512&#10;https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511&#10;&#10;Songs, albums, playlists, artists and music videos all work — one per line."></textarea>
+    <div class="row">
+      <div class="seg" id="codec-seg">
+        <button data-codec="alac,aac-web" class="active">ALAC · AAC fallback</button>
+        <button data-codec="alac">ALAC only</button>
+        <button data-codec="aac-web">AAC 256</button>
+        <button data-codec="atmos">Dolby Atmos</button>
+      </div>
+      <button class="btn" id="btn-download"><span id="btn-label">Download</span></button>
+      <button class="btn ghost" id="btn-settings-toggle">⚙ Settings</button>
+    </div>
+    <div class="hint" id="wrapper-hint" style="display:none"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Settings</h2>
+    <div class="settings" id="settings">
+      <div class="field">
+        <label for="f-output">Output folder</label>
+        <input type="text" id="f-output" placeholder="~/Music/Apple Music">
+      </div>
+      <div class="field">
+        <label for="f-cookies">Cookies file (Netscape format)</label>
+        <input type="text" id="f-cookies" placeholder="cookies.txt">
+      </div>
+      <div class="field">
+        <label for="f-cover">Cover size (px)</label>
+        <input type="number" id="f-cover" min="0" max="3000" step="100">
+      </div>
+      <div class="field">
+        <label for="f-artist">Artist downloads</label>
+        <select id="f-artist">
+          <option value="all-albums">All albums</option>
+          <option value="main-albums">Main albums</option>
+          <option value="compilation-albums">Compilations</option>
+          <option value="live-albums">Live albums</option>
+          <option value="singles-eps">Singles &amp; EPs</option>
+          <option value="top-songs">Top songs</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-wrapper"><span class="switch"></span>Use wrapper (ALAC/Atmos)</label>
+        <div style="margin-top:8px"><input type="text" id="f-wrapper-url" placeholder="http://127.0.0.1"></div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-lyrics"><span class="switch"></span>Synced lyrics (.lrc)</label>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-coverfile"><span class="switch"></span>Save cover as file</label>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-flac"><span class="switch"></span>Auto-convert ALAC → FLAC</label>
+        <div class="hint" style="margin-top:6px">After each download, new ALAC tracks are converted to FLAC (both kept). AAC is skipped automatically.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-overwrite"><span class="switch"></span>Overwrite existing files</label>
+      </div>
+      <div class="settings-actions">
+        <button class="btn small" id="btn-save-settings">Save settings</button>
+        <span class="hint" style="align-self:center">Saved to <code>config.json</code> next to the app.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Wrapper &amp; login <span class="badge" id="w-pill" style="margin-left:8px">checking…</span></h2>
+    <div class="w-state" id="w-state">
+      <span class="badge" id="w-auth">auth: …</span>
+      <span class="badge" id="w-play">playback: …</span>
+    </div>
+    <div class="w-banner" id="w-banner">Loading wrapper status…</div>
+    <div class="code-row" id="w-code-row" style="display:none">
+      <input id="w-code" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code">
+      <button class="btn small" id="w-submit">Submit code</button>
+      <span class="hint" style="align-self:center">Paste the code Apple sent — no Terminal needed.</span>
+    </div>
+    <div class="w-actions">
+      <button class="btn ghost small" id="w-restart">↻ Restart login (send fresh code)</button>
+    </div>
+    <div style="margin-top:14px">
+      <div class="hint" style="margin-bottom:6px">Wrapper logs (Apple doesn't say which channel it used — watch Gmail incl. spam, SMS, and trusted devices):</div>
+      <div class="job-log show" id="w-log" style="max-height:160px"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4 · Convert ALAC → FLAC</h2>
+    <div class="row" style="margin-top:0">
+      <div class="field" style="flex:1; min-width:240px">
+        <label for="f-convert-dir">Folder to scan (only ALAC files are converted)</label>
+        <input type="text" id="f-convert-dir" placeholder="~/Music/Apple Music">
+      </div>
+      <label class="toggle" style="align-self:flex-end; margin-bottom:9px">
+        <input type="checkbox" id="f-convert-overwrite"><span class="switch"></span>Overwrite existing .flac
+      </label>
+      <button class="btn ghost" id="btn-convert" style="align-self:flex-end">Convert to FLAC</button>
+    </div>
+    <div class="hint">Lossless ALAC → FLAC — same audio quality, both files kept side by side. AAC downloads are detected and skipped automatically.</div>
+  </section>
+
+  <section class="card">
+    <h2>5 · Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
+    <div class="jobs" id="jobs"><div class="empty">Nothing yet — paste links above and hit <b>Download</b>.</div></div>
+  </section>
+
+  <footer>
+    Requires an active Apple Music subscription.<br>
+    Lossless ALAC needs the <code>wrapper-v2</code> server (see <code>README.md</code> / <code>setup_wrapper.sh</code>) — until then downloads fall back to AAC 256kbps.
+  </footer>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  status: null,
+  config: null,
+  jobs: [],
+  pollTimer: null,
+  expanded: new Set(),
+};
+
+/* ---------------- toast ---------------- */
+function toast(msg, type = "") {
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+/* ---------------- status pills ---------------- */
+function renderPills(status) {
+  const gamdl = $("pill-gamdl");
+  gamdl.className = "pill " + (status.gamdl_found ? "ok" : "bad");
+  gamdl.innerHTML = `<span class="dot"></span>gamdl <span class="val">${status.gamdl || "missing"}</span>`;
+
+  const ffmpeg = $("pill-ffmpeg");
+  ffmpeg.className = "pill " + (status.ffmpeg_found ? "ok" : "bad");
+  ffmpeg.innerHTML = `<span class="dot"></span>FFmpeg <span class="val">${status.ffmpeg_found ? "✓" : "missing"}</span>`;
+  ffmpeg.title = status.ffmpeg || "";
+
+  const cookies = $("pill-cookies");
+  cookies.className = "pill " + (status.cookies_exists ? "ok" : "warn");
+  cookies.innerHTML = `<span class="dot"></span>Cookies ${status.cookies_exists ? "✓" : "missing"}`;
+  cookies.title = status.cookies_path;
+
+  const wrapper = $("pill-wrapper");
+  wrapper.className = "pill " + (status.wrapper_enabled ? "ok" : "");
+  wrapper.innerHTML = `<span class="dot"></span>Wrapper ${status.wrapper_enabled ? "on" : "off"}`;
+
+  const hint = $("wrapper-hint");
+  if (status.wrapper_enabled && !status.cookies_exists) {
+    hint.style.display = "block";
+    hint.innerHTML = "Wrapper mode doesn't need cookies — the wrapper logs in with your Apple ID. Make sure <code>" + escapeHtml(status.wrapper_url || "") + "</code> is running.";
+  } else {
+    hint.style.display = "none";
+  }
+  updateCodecHint(status);
+}
+
+/* ---------------- settings ---------------- */
+function loadSettings(cfg) {
+  $("f-output").value = cfg.output_path || "";
+  $("f-cookies").value = cfg.cookies_path || "";
+  $("f-cover").value = cfg.cover_size || 1200;
+  $("f-artist").value = cfg.artist_auto_select || "all-albums";
+  $("f-wrapper").checked = !!cfg.use_wrapper;
+  $("f-wrapper-url").value = cfg.wrapper_url || "http://127.0.0.1";
+  $("f-lyrics").checked = cfg.synced_lyrics !== false;
+  $("f-coverfile").checked = !!cfg.save_cover;
+  $("f-flac").checked = !!cfg.convert_to_flac;
+  $("f-overwrite").checked = !!cfg.overwrite;
+  $("f-convert-dir").value = cfg.output_path || "";
+}
+function collectSettings() {
+  return {
+    output_path: $("f-output").value.trim(),
+    cookies_path: $("f-cookies").value.trim(),
+    cover_size: parseInt($("f-cover").value, 10) || 1200,
+    artist_auto_select: $("f-artist").value,
+    use_wrapper: $("f-wrapper").checked,
+    wrapper_url: $("f-wrapper-url").value.trim() || "http://127.0.0.1",
+    synced_lyrics: $("f-lyrics").checked,
+    save_cover: $("f-coverfile").checked,
+    convert_to_flac: $("f-flac").checked,
+    overwrite: $("f-overwrite").checked,
+  };
+}
+async function saveSettings() {
+  const prevOutput = $("f-output").value.trim();
+  const res = await fetch("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(collectSettings()),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    if ($("f-convert-dir").value.trim() === prevOutput) {
+      $("f-convert-dir").value = $("f-output").value.trim();
+    }
+    toast("Settings saved ✓", "ok"); await refreshStatus();
+  }
+  else toast("Could not save settings", "err");
+}
+
+/* ---------------- jobs ---------------- */
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function fmtUrl(u) {
+  try { const x = new URL(u); return x.hostname + x.pathname + (x.search ? " …" : ""); }
+  catch { return u.length > 70 ? u.slice(0, 70) + "…" : u; }
+}
+function renderJobs() {
+  const box = $("jobs");
+  if (!state.jobs.length) {
+    box.innerHTML = `<div class="empty">Nothing yet — paste links above and hit <b>Download</b>.</div>`;
+    $("btn-clear").style.display = "none";
+    return;
+  }
+  $("btn-clear").style.display = "block";
+  box.innerHTML = "";
+  for (const j of state.jobs) {
+    const card = document.createElement("div");
+    card.className = "job";
+    card.dataset.id = j.id;
+
+    const isLossless = /alac|atmos|flac/.test(j.codec);
+    const isConvert = j.kind === "convert";
+    const head = document.createElement("div");
+    head.className = "job-head";
+
+    const dot = document.createElement("div");
+    dot.className = "job-status " + j.status;
+
+    const ttl = document.createElement("div");
+    ttl.style.flex = "1";
+    const title = document.createElement("div");
+    title.className = "job-title";
+    const urlLabel = isConvert
+      ? (j.source_dir || "folder")
+      : (j.urls.length === 1 ? fmtUrl(j.urls[0]) : `${j.urls.length} links`);
+    title.textContent = isConvert
+      ? (j.status === "done" ? "FLAC conversion complete" : j.status === "failed" ? "FLAC conversion failed" : j.status === "cancelled" ? "Conversion cancelled" : (j.status === "running" ? "Converting to FLAC…" : "Conversion queued…"))
+      : (j.status === "done" ? "Download complete" : j.status === "failed" ? "Download failed" : j.status === "cancelled" ? "Cancelled" : (j.status === "running" ? "Downloading…" : "Queued…"));
+    const sub = document.createElement("div");
+    sub.className = "job-sub";
+    sub.textContent = `${urlLabel} · started ${fmtTime(j.created_at)}`;
+    ttl.append(title, sub);
+
+    const right = document.createElement("div");
+    right.className = "job-right";
+    if (isLossless) {
+      const b = document.createElement("span");
+      b.className = "badge lossless";
+      b.textContent = j.codec_label;
+      right.appendChild(b);
+    } else {
+      const b = document.createElement("span");
+      b.className = "badge";
+      b.textContent = j.codec_label;
+      right.appendChild(b);
+    }
+    const el = document.createElement("span");
+    el.className = "elapsed";
+    el.textContent = j.status === "done" || j.status === "failed" || j.status === "cancelled"
+      ? fmtTime(j.updated_at) : "";
+    right.appendChild(el);
+
+    head.append(dot, ttl, right);
+    card.appendChild(head);
+
+    const urls = document.createElement("div");
+    urls.className = "job-urls";
+    urls.textContent = j.urls.map(fmtUrl).join("\n");
+    urls.style.display = j.urls.length > 1 ? "block" : "none";
+    card.appendChild(urls);
+
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+    const logBtn = document.createElement("button");
+    logBtn.className = "link-btn";
+    const showLog = state.expanded.has(j.id);
+    logBtn.textContent = showLog ? "Hide log" : "Show log";
+    logBtn.onclick = () => {
+      if (state.expanded.has(j.id)) state.expanded.delete(j.id); else state.expanded.add(j.id);
+      refreshJob(j.id, true);
+    };
+    actions.appendChild(logBtn);
+
+    if (j.status === "running" || j.status === "queued") {
+      const cancel = document.createElement("button");
+      cancel.className = "link-btn danger";
+      cancel.textContent = "Cancel";
+      cancel.onclick = async () => {
+        await fetch(`/api/jobs/${j.id}/cancel`, { method: "POST" });
+      };
+      actions.appendChild(cancel);
+    }
+    card.appendChild(actions);
+
+    const log = document.createElement("div");
+    log.className = "job-log" + (showLog ? " show" : "");
+    log.id = "log-" + j.id;
+    card.appendChild(log);
+    box.appendChild(card);
+
+    if (showLog) fetchLog(j.id);
+  }
+}
+function fetchLog(id) {
+  fetch(`/api/jobs/${id}`).then(r => r.json()).then(d => {
+    const log = $("log-" + id);
+    if (!log || !d.log) return;
+    log.innerHTML = d.log.map(l =>
+      `<div><span class="ts">${l.ts}</span> <span class="lvl">${l.level}</span> ${escapeHtml(l.text)}</div>`
+    ).join("");
+    log.scrollTop = log.scrollHeight;
+  });
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+async function refreshJobs() {
+  const res = await fetch("/api/jobs");
+  const data = await res.json();
+  state.jobs = data.jobs;
+  renderJobs();
+  for (const id of state.expanded) fetchLog(id);
+
+  const active = state.jobs.some(j => j.status === "running" || j.status === "queued");
+  if (active && !state.pollTimer) {
+    state.pollTimer = setInterval(async () => {
+      await refreshJobs();
+      await refreshStatus();
+    }, 1500);
+  } else if (!active && state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+}
+async function refreshJob(id, forceLog) {
+  await refreshJobs();
+  if (forceLog) fetchLog(id);
+}
+
+/* ---------------- actions ---------------- */
+function currentCodec() {
+  const btn = document.querySelector("#codec-seg button.active");
+  return btn ? btn.dataset.codec : "alac,aac-web";
+}
+async function download() {
+  const raw = $("urls").value.trim();
+  if (!raw) { toast("Paste at least one Apple Music URL first.", "err"); $("urls").focus(); return; }
+  const urls = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+
+  const btn = $("btn-download");
+  btn.disabled = true;
+  $("btn-label").textContent = "Starting…";
+  try {
+    const res = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls, codec: currentCodec() }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Download failed to start.", "err"); return; }
+    toast(`Queued ${data.job.url_count} link${data.job.url_count > 1 ? "s" : ""} ✓`, "ok");
+    state.expanded.add(data.job.id);
+    await refreshJobs();
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    $("btn-label").textContent = "Download";
+  }
+}
+
+/* ---------------- boot ---------------- */
+async function refreshStatus() {
+  const res = await fetch("/api/status");
+  state.status = await res.json();
+  renderPills(state.status);
+}
+
+/* ---------------- wrapper / login panel ---------------- */
+async function refreshWrapper() {
+  let data;
+  try {
+    const res = await fetch("/api/wrapper");
+    data = await res.json();
+  } catch (e) { return; }
+
+  const pill = $("w-pill");
+  const banner = $("w-banner");
+  if (!data.reachable) {
+    pill.textContent = "offline"; pill.className = "badge";
+    $("w-auth").textContent = "auth: —";
+    $("w-play").textContent = "playback: —";
+    banner.textContent = "⚠ The wrapper isn't reachable — make sure Docker Desktop is running and the wrapper container is up (docker compose up).";
+    banner.className = "w-banner err";
+    $("w-code-row").style.display = "none";
+    $("w-log").innerHTML = "<div>— no logs —</div>";
+    return;
+  }
+
+  pill.textContent = "connected" + (data.version ? " · v" + data.version : "");
+  pill.className = "badge lossless";
+
+  const auth = data.auth_state;
+  const authBadge = $("w-auth");
+  authBadge.textContent = "auth: " + auth + (data.apple_id ? " · " + data.apple_id : "");
+  authBadge.className = "badge" + (auth === "authenticated" ? "" : " lossless");
+  $("w-play").textContent = "playback: " + (data.playback_ready ? "ready ✓" : "not ready");
+
+  if (auth === "awaiting_2fa") {
+    banner.textContent = data.hint;
+    banner.className = "w-banner warn";
+    $("w-code-row").style.display = "flex";
+  } else if (auth === "authenticated") {
+    banner.textContent = "✓ " + data.hint;
+    banner.className = "w-banner ok";
+    $("w-code-row").style.display = "none";
+  } else if (auth === "failed") {
+    banner.textContent = data.hint;
+    banner.className = "w-banner err";
+    $("w-code-row").style.display = "flex";
+  } else {
+    banner.textContent = data.hint;
+    banner.className = "w-banner";
+    $("w-code-row").style.display = "none";
+  }
+
+  const log = $("w-log");
+  log.innerHTML = (data.logs || []).map(l => `<div>${escapeHtml(l)}</div>`).join("") || "<div>no log lines</div>";
+  log.scrollTop = log.scrollHeight;
+}
+
+async function submitCode() {
+  const code = $("w-code").value.trim();
+  if (!code) { toast("Enter the 6-digit code first.", "err"); return; }
+  const btn = $("w-submit");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/wrapper/2fa", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast("Code accepted — logged in! 🎉", "ok");
+      $("w-code").value = "";
+    } else {
+      const resp = data.response || {};
+      toast("Code rejected — " + (resp.error || data.error || "try again") + ". Get a fresh one via Restart login.", "err");
+    }
+    await refreshWrapper();
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { btn.disabled = false; }
+}
+
+async function restartLogin() {
+  const btn = $("w-restart");
+  btn.disabled = true;
+  btn.textContent = "Restarting…";
+  try {
+    const res = await fetch("/api/wrapper/restart", { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Restart failed", "err"); }
+    else {
+      toast("Login restarted — a fresh code is on its way. Watch Gmail/SMS/trusted devices.", "ok");
+      $("w-code").value = "";
+    }
+    setTimeout(() => refreshWrapper(), 2500);
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "↻ Restart login (send fresh code)"; }
+}
+
+async function convertToFlac() {
+  const dir = $("f-convert-dir").value.trim();
+  if (!dir) { toast("Enter a folder to convert.", "err"); $("f-convert-dir").focus(); return; }
+  const btn = $("btn-convert");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_dir: dir, overwrite: $("f-convert-overwrite").checked }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Conversion failed to start.", "err"); return; }
+    toast("FLAC conversion started ✓", "ok");
+    state.expanded.add(data.job.id);
+    await refreshJobs();
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("btn-download").addEventListener("click", download);
+$("btn-convert").addEventListener("click", convertToFlac);
+$("btn-settings-toggle").addEventListener("click", () => $("settings").classList.toggle("open"));
+$("w-submit").addEventListener("click", submitCode);
+$("w-restart").addEventListener("click", restartLogin);
+$("w-code").addEventListener("keydown", (e) => { if (e.key === "Enter") submitCode(); });
+$("btn-save-settings").addEventListener("click", saveSettings);
+$("btn-clear").addEventListener("click", async () => {
+  await fetch("/api/jobs", { method: "DELETE" });
+  await refreshJobs();
+});
+function updateCodecHint(status) {
+  const hint = $("wrapper-hint");
+  const codec = currentCodec();
+  // ALAC (alone or as the first fallback priority) needs the wrapper server:
+  // the license exchange fails with status -1002 without it, and gamdl does
+  // not fall back to AAC after that error.
+  const needsWrapper = codec === "alac" || codec === "alac,aac-web" || codec === "atmos";
+  if (needsWrapper && !(status && status.wrapper_enabled)) {
+    hint.style.display = "block";
+    hint.textContent = "⚠ " + (codec === "atmos" ? "Dolby Atmos" : "ALAC") + " needs the wrapper server — pick 'AAC 256' for now, then run setup_wrapper.sh to enable lossless.";
+  } else if (!(status && status.wrapper_enabled && !(status.cookies_exists))) {
+    hint.style.display = "none";
+  }
+}
+$("codec-seg").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  document.querySelectorAll("#codec-seg button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  updateCodecHint(state.status);
+});
+
+(async function init() {
+  try {
+    const [status, cfg] = await Promise.all([fetch("/api/status").then(r => r.json()), fetch("/api/config").then(r => r.json())]);
+    state.status = status; state.config = cfg;
+    renderPills(status);
+    loadSettings(cfg);
+    // Until the wrapper server is running, default to AAC 256 so downloads
+    // can't fail on the ALAC license exchange.
+    if (!status.wrapper_enabled) {
+      document.querySelectorAll("#codec-seg button").forEach(b => b.classList.remove("active"));
+      document.querySelector('#codec-seg button[data-codec="aac-web"]').classList.add("active");
+    }
+    await refreshJobs();
+    refreshWrapper();
+    setInterval(refreshWrapper, 5000);
+  } catch (e) {
+    toast("Could not reach the app server.", "err");
+  }
+})();
+</script>
+</body>
+</html>

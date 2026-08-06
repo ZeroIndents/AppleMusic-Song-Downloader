@@ -1,0 +1,14 @@
+{
+  "artist_auto_select": "all-albums",
+  "convert_to_flac": true,
+  "cookies_path": "cookies.txt",
+  "cover_size": 1200,
+  "output_path": "~/Music/Apple Music",
+  "overwrite": false,
+  "save_cover": false,
+  "song_codec_priority": "alac,aac-web",
+  "synced_lyrics": true,
+  "synced_lyrics_format": "lrc",
+  "use_wrapper": true,
+  "wrapper_url": "http://127.0.0.1"
+}
