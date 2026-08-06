@@ -22,16 +22,13 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import urllib.parse
 import urllib.request
-
-from downloader import PROJECT_DIR
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 ITUNES_SEARCH = "https://itunes.apple.com/search"
 SPOTIFY_EMBED = "https://open.spotify.com/embed"
-YTDLP_MIN = (2024, 1, 0)
+MAX_TRACKS = 150  # preview cap — protects the app from gigantic playlists
 
 # ---------------------------------------------------------------------------
 # URL parsing
@@ -91,6 +88,8 @@ def resolve_spotify(kind: str, spot_id: str) -> tuple[str, list[dict]]:
 
     Returns (title, [{title, artist, source_id}]).
     """
+    if kind == "track":
+        raise ValueError("Single Spotify tracks can't be previewed — paste an album or playlist link instead.")
     page = _http_get_text(f"{SPOTIFY_EMBED}/{kind}/{spot_id}")
     m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', page, re.S)
     if not m:
@@ -266,6 +265,9 @@ def preview(url: str) -> dict:
         title, tracks = resolve_youtube(url)
         source = "youtube"
 
+    if len(tracks) > MAX_TRACKS:
+        tracks = tracks[:MAX_TRACKS]
+
     matched = match_tracks(tracks)
     ok = sum(1 for t in matched if t.get("match"))
     return {
@@ -275,6 +277,7 @@ def preview(url: str) -> dict:
         "total": len(matched),
         "matched": ok,
         "unmatched": len(matched) - ok,
+        "truncated": len(tracks) == MAX_TRACKS,
         "tracks": matched,
     }
 

@@ -25,7 +25,7 @@ fi
 # 2. Generate the icon
 echo "→ generating icon…"
 .venv/bin/python - <<'PY'
-from PIL import Image, ImageDraw, ImageOps, ImageFilter
+from PIL import Image, ImageDraw
 import math
 
 S = 1024
@@ -66,7 +66,6 @@ nd.polygon([(x1 - 16, 260), (x2 + 16, 260), (x2 + 16, 300), (x1 - 16, 300)], fil
 # gentle rotation for style
 note = note.rotate(-8, resample=Image.BICUBIC, center=(S // 2, S // 2))
 img = Image.alpha_composite(img, note)
-img = img.filter(ImageFilter.GaussianBlur(0.0))
 
 # write iconset
 import os
@@ -133,14 +132,14 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
+BROWSER_OPENED=0
 for BROWSER in "Brave Browser" "Google Chrome" "Microsoft Edge" "Arc"; do
   if [ -d "/Applications/$BROWSER.app" ]; then
-    open -na "$BROWSER" --args --app=http://127.0.0.1:8741 2>/dev/null
-    BROWSER_OPENED=1
+    open -na "$BROWSER" --args --app=http://127.0.0.1:8741 2>/dev/null && BROWSER_OPENED=1
     break
   fi
 done
-[ -n "${BROWSER_OPENED:-}" ] || open http://127.0.0.1:8741 2>/dev/null
+[ "$BROWSER_OPENED" = "1" ] || open http://127.0.0.1:8741 2>/dev/null
 log "running → http://127.0.0.1:8741"
 
 wait "$APP_PID"

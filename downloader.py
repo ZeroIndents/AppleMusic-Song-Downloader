@@ -303,6 +303,16 @@ def run_job(job: Job, env: dict | None = None) -> None:
     """Run the gamdl subprocess for a job (called from a worker thread)."""
     cmd = build_gamdl_command(job.config, job.options, job.urls)
     job.set_status("running")
+
+    # Snapshot the .m4a files that already exist BEFORE gamdl starts, so the
+    # auto FLAC conversion only touches what this job actually downloads.
+    before_m4a: set[str] = set()
+    if job.config.get("convert_to_flac"):
+        try:
+            before_m4a = {str(p) for p in Path(job.output_path).rglob("*.m4a")}
+        except OSError:
+            before_m4a = set()
+
     try:
         job.proc = subprocess.Popen(
             cmd,
@@ -316,15 +326,6 @@ def run_job(job: Job, env: dict | None = None) -> None:
         job.add_line(f"ERROR: could not launch gamdl: {e}")
         job.set_status("failed")
         return
-
-    # Snapshot the .m4a files that already exist before gamdl starts, so the
-    # auto FLAC conversion only touches what this job actually downloaded.
-    before_m4a = set()
-    if job.config.get("convert_to_flac"):
-        try:
-            before_m4a = {str(p) for p in Path(job.output_path).rglob("*.m4a")}
-        except OSError:
-            before_m4a = set()
 
     assert job.proc.stdout is not None
     for line in job.proc.stdout:
