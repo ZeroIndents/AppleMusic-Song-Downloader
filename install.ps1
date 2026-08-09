@@ -73,6 +73,9 @@ function Install-Winget([string]$Id) {
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { Install-Winget "Python.Python.3.12" }
 if (-not (Get-Command git -ErrorAction SilentlyContinue))    { Install-Winget "Git.Git" }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Install-Winget "Gyan.FFmpeg" }
+# jq is needed by the wrapper setup (it runs inside Git Bash, which ships
+# unzip but not jq). winget's jq lands on PATH so Git Bash can see it.
+if (-not (Get-Command jq -ErrorAction SilentlyContinue))     { Install-Winget "jqlang.jq" }
 
 foreach ($tool in @("python", "git")) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { die "$tool still not found — try:  winget install $tool" }

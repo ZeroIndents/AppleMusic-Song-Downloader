@@ -69,7 +69,7 @@ cd wrapper-v2
 # fail with a clear message instead of a cryptic "jq is required" mid-extract.
 if ! command -v jq >/dev/null 2>&1; then
   echo "✗ jq is required by wrapper-v2's library extraction."
-  echo "  Install it:  brew install jq   (Debian/Ubuntu: apt install jq · Fedora: dnf install jq)"
+  echo "  Install it:  brew install jq   (Debian/Ubuntu: apt install jq · Fedora: dnf install jq · Windows: winget install jqlang.jq)"
   echo "  (the one-command installers install jq automatically)"
   exit 1
 fi

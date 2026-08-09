@@ -27,7 +27,17 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 - **`jq` prerequisite check** — wrapper-v2's new `extract-libs.sh` needs
   `jq`, which macOS doesn't ship; setup now fails fast with install
   instructions instead of a cryptic `jq is required`. The one-command
-  installers (`install.sh`, `install_linux.sh`) install `jq` too.
+  installers (`install.sh`, `install_linux.sh`, and Windows `install.ps1` via
+  `winget install jqlang.jq`) install `jq` too.
+
+### Changed
+
+- **Cross-platform line endings** — new `.gitattributes` enforces LF for
+  shell/Python/docs and CRLF for `.bat` files, so a Windows-side edit can
+  never silently break the macOS/Linux scripts (bash chokes on CRLF). Batch
+  files now ship as CRLF.
+
+---
 
 ---
 
