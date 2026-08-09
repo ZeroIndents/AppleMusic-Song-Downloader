@@ -216,7 +216,8 @@ a built-in **delta sync**, since re-running skips already-downloaded files).
 - **One-click launcher** — `./start.sh` (macOS + Linux), double-click
   `Start Music High Res.command`, or `Music High Res.app` (built with
   `./make_app.sh`), or **`Start Music High Res.bat` / `start.ps1` (Windows)**
-  — boots Docker → wrapper → app → browser automatically.
+  — boots Docker → wrapper → app → browser automatically, and stops the
+  wrapper again when you close the app (Docker Desktop stays running).
   On macOS the first launch builds the `.app` bundle and drops a **Desktop
   shortcut** to it, so future launches are a single double-click.
 
@@ -459,8 +460,8 @@ Base: `http://127.0.0.1:8741`. All JSON.
 
 | File | Purpose |
 |---|---|
-| `start.sh` | **Universal one-click launcher** (macOS + Linux): first-run setup (with a real venv-health check — a half-created `.venv` re-runs setup instead of crashing), prerequisite checklist, Docker → wrapper → app → browser. On macOS it also builds `Music High Res.app` once and puts a **Desktop shortcut** pointing at it (skip with `MHR_NO_DESKTOP=1`). |
-| `start.ps1` | **Windows launcher** (PowerShell twin of `start.sh`): first-run setup + checklist + Docker → wrapper → app → browser; flags `-Min` / `-NoDocker` / `-NoBrowser`; logs to `logs\launcher.log`. |
+| `start.sh` | **Universal one-click launcher** (macOS + Linux): first-run setup (with a real venv-health check — a half-created `.venv` re-runs setup instead of crashing), prerequisite checklist, Docker → wrapper → app → browser. Starts the wrapper on launch and stops it again when you close the app (Docker Desktop stays running). On macOS it also builds `Music High Res.app` once and puts a **Desktop shortcut** pointing at it (skip with `MHR_NO_DESKTOP=1`). |
+| `start.ps1` | **Windows launcher** (PowerShell twin of `start.sh`): first-run setup + checklist + Docker → wrapper → app → browser; starts the wrapper on launch and stops it on close (Docker Desktop stays running); flags `-Min` / `-NoDocker` / `-NoBrowser`; logs to `logs\launcher.log`. |
 | `Start Music High Res.command` | macOS double-click launcher (thin wrapper around `start.sh`) |
 | `Start Music High Res.bat` | Windows double-click launcher (thin wrapper around `start.ps1`) |
 | `make_app.sh` | Builds `Music High Res.app` (Dock icon, standalone window) |

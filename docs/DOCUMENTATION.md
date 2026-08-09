@@ -629,10 +629,21 @@ After a reboot, one double-click:
    the browser and exits right away (the Terminal window closes) — the server it
    found is already being kept alive by whoever started it.
 
+When you **close the app** (Ctrl+C, closing the launcher window, or Quit on the
+`.app` bundle), the launcher's cleanup trap stops the ALAC wrapper it started
+(`docker compose stop` in `wrapper-v2/`) — the wrapper only runs while the app
+is open, and **Docker Desktop itself is left running**. If the launcher reused
+an already-running server (and thus didn't start a new app session), it leaves
+the wrapper alone too.
+
 Docker Desktop also **auto-starts at login** via the LaunchAgent
 `~/Library/LaunchAgents/com.musichighres.docker.plist`
 (`RunAtLoad` → `open -a Docker`). Remove it with
 `launchctl bootout gui/$(id -u)/com.musichighres.docker`.
+
+By contrast the **wrapper never auto-starts** — `setup_wrapper.sh` pins the
+compose restart policy to `no`, so it only runs when the launcher (or the
+in-app wizard) starts it while the app is open.
 
 ---
 

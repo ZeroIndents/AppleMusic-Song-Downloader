@@ -14,7 +14,8 @@
 #    1. Runs setup.sh automatically on first run (creates .venv + deps)
 #    2. Prints a friendly checklist of what's installed (gamdl, ffmpeg, …)
 #    3. Starts Docker Desktop (macOS) if it isn't running
-#    4. Starts the ALAC wrapper (wrapper-v2) when present
+#    4. Starts the ALAC wrapper (wrapper-v2) when present — and stops it
+#       again when you close the app (Docker Desktop itself stays running)
 #    5. Starts the app server (or reuses one that's already running)
 #    6. Opens the browser at http://127.0.0.1:8741
 #
@@ -33,6 +34,7 @@ warn() { echo "! $1"; }
 fail() { echo "✗ $1"; }
 
 MIN_MODE=0; NO_BROWSER=0; APP_STYLE=0; NO_DOCKER=0
+WRAPPER_STARTED=0   # we started the wrapper this session (stop it on close)
 for arg in "$@"; do
   case "$arg" in
     --min)        MIN_MODE=1 ;;
@@ -142,6 +144,7 @@ fi
 if [ "$MIN_MODE" != "1" ] && [ -d wrapper-v2 ] && docker_ok; then
   say "Starting the ALAC wrapper…"
   ( cd wrapper-v2 && docker compose up -d )
+  WRAPPER_STARTED=1
   sleep 3
   WAIT=0; STATE=""
   until [ "$STATE" = "authenticated" ]; do
@@ -181,10 +184,37 @@ open_url() {
   fi
 }
 
-# When macOS quits the .app bundle (right-click → Quit) it sends SIGTERM to
-# this process. Kill the server *we* started (never a reused one) so the app
-# actually stops — otherwise app.py stays orphaned on port 8741.
-trap '[ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null; exit 0' TERM INT
+# When the app closes (Ctrl+C, closing the terminal window, or macOS
+# right-click → Quit on the .app bundle — all send TERM/INT), clean up:
+#   1. Kill the server *we* started (never a reused one) so app.py doesn't
+#      stay orphaned on port 8741.
+#   2. Stop the ALAC wrapper — it should only run while the app is open.
+#      Docker Desktop itself is left running.
+# cleanup() is idempotent, so it's safe to run on EXIT as well.
+cleanup() {
+  if [ -n "${SERVER_PID:-}" ]; then
+    kill "$SERVER_PID" 2>/dev/null
+    sleep 1   # let our server free port 8741 before probing below
+  fi
+  # Stop the wrapper only if no OTHER launcher session is still holding the
+  # app open (it would still need the wrapper). This covers the reuse case
+  # and double-launched sessions uniformly.
+  if [ "$WRAPPER_STARTED" = "1" ] && [ -d wrapper-v2 ] && command -v docker >/dev/null 2>&1 \
+     && ! curl -s -m 2 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
+    say "Closing the app — stopping the ALAC wrapper (Docker Desktop stays running)…"
+    # Bounded stop: `-t 3` limits the container's grace period to 3s, and the
+    # CLI is capped at 8s so a wedged Docker daemon can never hang the close.
+    ( cd wrapper-v2 && docker compose stop -t 3 ) >/dev/null 2>&1 &
+    local STOPPID=$!
+    for _ in 1 2 3 4 5 6 7 8; do
+      kill -0 "$STOPPID" 2>/dev/null || break
+      sleep 1
+    done
+    kill "$STOPPID" 2>/dev/null; wait "$STOPPID" 2>/dev/null
+  fi
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
 
 # Wait for the server before opening the browser.
 for _ in $(seq 1 30); do

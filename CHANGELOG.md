@@ -130,6 +130,15 @@ panel, and a pile of power-user tooling.
 - **`/api/tags` path containment** — the read/write tag endpoints now refuse
   paths outside the output folder (every other file endpoint already did).
 
+### Changed
+
+- **Wrapper lifecycle** — the ALAC wrapper now runs **only while the app is
+  open**: the launchers (`start.sh` / `start.ps1`) start it when you launch
+  the app and stop it again when you close it (`docker compose stop`), so it
+  no longer auto-starts with Docker Desktop. **Docker Desktop itself is left
+  running.** `setup_wrapper.sh` now pins the wrapper's compose restart policy
+  to `no` for future setups.
+
 ---
 
 ## [0.1.0] - 2026-08-07

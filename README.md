@@ -132,7 +132,8 @@ Four ways to launch — pick your favourite:
   setup on first launch (it even re-runs setup if it detects a half-created
   `.venv`), prints a friendly checklist of what's installed (gamdl, ffmpeg,
   cookies, Docker, wrapper), boots Docker + the ALAC wrapper when present,
-  starts the app, and opens the browser. On macOS the first launch also builds
+  starts the app, and opens the browser. The ALAC wrapper starts with the app
+  and stops again when you close it — **Docker Desktop itself stays running**. On macOS the first launch also builds
   `Music High Res.app` and puts a **Desktop shortcut** to it (future launches
   are a single double-click). Flags: `--min` (AAC only, skip Docker/wrapper),
   `--no-browser`, `--no-docker`.
@@ -418,8 +419,9 @@ Original `.m4a` files are always kept; a re-run skips files that already have a
 ## 🔁 After a reboot — it's ONE click
 
 Nothing needs to be re-setup. Docker Desktop **auto-starts at login**
-(LaunchAgent installed during setup), and one launcher boots the wrapper and
-the app for you:
+(LaunchAgent installed during setup) and **stays running**. The wrapper runs
+**only while the app is open** — the launcher starts it when you launch the
+app and stops it again when you close the app:
 
 ```
 ✓ Docker is already running            (or: launching Docker Desktop…)

@@ -104,6 +104,20 @@ EOF
   fi
 fi
 
+# The upstream wrapper ships `restart: unless-stopped`, which boots the
+# wrapper whenever Docker Desktop starts. Music High Res wants the wrapper to
+# run ONLY while the app is open (the launcher starts/stops it), so pin the
+# restart policy to "no" — Docker Desktop itself keeps running regardless.
+echo "→ Forcing the wrapper to NOT auto-start with Docker…"
+if grep -qE '^[[:space:]]*restart:' compose.yaml 2>/dev/null; then
+  # Anchored to the line start so comments containing "restart:" are safe.
+  sed -i '' 's/^[[:space:]]*restart:.*/    restart: "no"/' compose.yaml 2>/dev/null \
+    || sed -i 's/^[[:space:]]*restart:.*/    restart: "no"/' compose.yaml
+else
+  echo "! compose.yaml has no restart policy — add 'restart: \"no\"' to the wrapper service"
+  echo "  if you don't want it to auto-start with Docker."
+fi
+
 echo "→ Building and starting wrapper (this first build may take a few minutes)…"
 docker compose up --build -d
 
