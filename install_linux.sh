@@ -62,11 +62,11 @@ if [ -n "$MISSING" ]; then
   say "Installing:$MISSING via your package manager (may ask for sudo)…"
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo apt-get install -y -qq python3 python3-venv python3-pip ffmpeg git
+    sudo apt-get install -y -qq python3 python3-venv python3-pip ffmpeg git jq
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y -q python3 python3-pip python3-virtualenv ffmpeg git
+    sudo dnf install -y -q python3 python3-pip python3-virtualenv ffmpeg git jq
   elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -S --noconfirm --needed python python-pip ffmpeg git
+    sudo pacman -S --noconfirm --needed python python-pip ffmpeg git jq
   else
     die "No supported package manager (apt/dnf/pacman) found — install python3, pip, ffmpeg and git manually, then re-run."
   fi

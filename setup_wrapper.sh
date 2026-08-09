@@ -65,8 +65,38 @@ else
 fi
 cd wrapper-v2
 
+# wrapper-v2's extract-libs.sh needs jq (macOS doesn't ship it by default) —
+# fail with a clear message instead of a cryptic "jq is required" mid-extract.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "✗ jq is required by wrapper-v2's library extraction."
+  echo "  Install it:  brew install jq   (Debian/Ubuntu: apt install jq · Fedora: dnf install jq)"
+  echo "  (the one-command installers install jq automatically)"
+  exit 1
+fi
+
 echo "→ Extracting Apple Music libraries from APK (x86_64)…"
-bash tools/extract-libs.sh --bundle "$APK" --arch x86_64
+if ! bash tools/extract-libs.sh --bundle "$APK" --arch x86_64; then
+  echo
+  echo "✗ Could not extract Apple's libraries from that APK."
+  echo
+  echo "  The wrapper needs Apple Music for Android 3.6.0-beta (build 1109) —"
+  echo "  the 'arm64-v8a + x86_64' variant. Older builds, arm-only variants"
+  echo "  and newer releases all fail exactly like this (no x86_64 libs, or"
+  echo "  the .so hashes don't match the pinned list)."
+  echo
+  echo "  → Download it here (APKMirror):"
+  echo "    https://www.apkmirror.com/apk/apple/apple-music/apple-music-3-6-0-beta-release/apple-music-3-6-0-beta-4-android-apk-download/"
+  echo "    (on the page pick: 3.6.0-beta → BUILD 1109 → arm64-v8a + x86_64)"
+  echo
+  echo "  → Check your file first (must show lib/x86_64 … .so or a"
+  echo "    split_config.x86_64.apk member):"
+  echo "      unzip -l \"$APK\" | grep -E 'lib/x86_64|x86_64'"
+  echo
+  echo "  In the app you can also paste an APK *URL* into the wrapper wizard"
+  echo "  ('5 · Wrapper & login' → ⚙ Setup the wrapper) and it downloads it"
+  echo "  for you."
+  exit 1
+fi
 
 echo "→ Staging Android system runtime…"
 bash tools/stage-system.sh --arch x86_64

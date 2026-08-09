@@ -74,7 +74,7 @@ for tool in git python3 ffmpeg gamdl; do
 done
 if [ -n "$MISSING" ]; then
   say "Installing:$MISSING via Homebrew…"
-  brew install git python3 ffmpeg gamdl
+  brew install git python3 ffmpeg gamdl jq
 fi
 for tool in git python3 ffmpeg gamdl; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool still not on PATH — try:  brew install $tool"

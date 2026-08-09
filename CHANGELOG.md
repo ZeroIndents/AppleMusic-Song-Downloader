@@ -16,7 +16,18 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+
+- **APK setup failure hint** — `setup_wrapper.sh` now explains *why* Apple
+  library extraction failed (`extract-libs: 0 ok 18 failed`) and prints the
+  exact known-good APK (Apple Music 3.6.0-beta build 1109, `arm64-v8a +
+  x86_64` variant), the APKMirror link, and a `unzip -l … | grep x86_64`
+  verify command. README Step 3 corrected: the `arm64-v8a + x86_64` variant
+  is required on Apple Silicon too, not just Intel.
+- **`jq` prerequisite check** — wrapper-v2's new `extract-libs.sh` needs
+  `jq`, which macOS doesn't ship; setup now fails fast with install
+  instructions instead of a cryptic `jq is required`. The one-command
+  installers (`install.sh`, `install_linux.sh`) install `jq` too.
 
 ---
 

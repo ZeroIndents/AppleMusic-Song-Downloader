@@ -326,8 +326,14 @@ AAC 256kbps works with just cookies. **ALAC lossless** and **Atmos** require
 in Docker and needs the Apple Music **Android** libraries (same Apple ID).
 
 1. **Install Docker Desktop** → https://www.docker.com/products/docker-desktop/
-2. **Get an Apple Music for Android APK** (v3.6.0-beta build 1109) from APKMirror.
-   On an Intel Mac you need the **`arm64-v8a + x86_64`** variant.
+2. **Get an Apple Music for Android APK** — Apple Music for Android
+   **3.6.0-beta (build 1109)**, the **`arm64-v8a + x86_64`** variant. That
+   variant is required on **both** Intel and Apple Silicon (the wrapper
+   container is amd64 and runs under Rosetta on Apple Silicon). Download it
+   here (pick build 1109):
+   https://www.apkmirror.com/apk/apple/apple-music/apple-music-3-6-0-beta-release/apple-music-3-6-0-beta-4-android-apk-download/
+   Wrong variants fail setup with `extract-libs: 0 ok 18 failed` — verify
+   yours first: `unzip -l <apk> | grep -E "lib/x86_64|x86_64"`.
 3. Run the automated setup:
    ```bash
    ./setup_wrapper.sh ~/Downloads/apple-music.apk
