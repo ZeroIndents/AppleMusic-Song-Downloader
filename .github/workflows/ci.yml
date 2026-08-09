@@ -104,20 +104,22 @@ jobs:
           Write-Output "py_compile OK"
 
       - name: Smoke import + Windows-aware helpers
+        # Git Bash ships on windows-latest runners, so a bash heredoc works.
+        shell: bash
         run: |
-          python -c "
-import downloader
-# venv_bin must probe the Windows Scripts layout without crashing.
-_ = downloader.venv_bin('votify')
-# gamdl_binary falls back to PATH; must never raise on Windows.
-try:
-    downloader.gamdl_binary()
-except Exception as e:
-    raise SystemExit(f'gamdl_binary raised on Windows: {e}')
-cfg = downloader.Config()
-assert cfg.get('output_path')
-print('Windows smoke import OK')
-"
+          python - <<'PY'
+          import downloader
+          # venv_bin must probe the Windows Scripts layout without crashing.
+          _ = downloader.venv_bin('votify')
+          # gamdl_binary falls back to PATH; must never raise on Windows.
+          try:
+              downloader.gamdl_binary()
+          except Exception as e:
+              raise SystemExit(f'gamdl_binary raised on Windows: {e}')
+          cfg = downloader.Config()
+          assert cfg.get('output_path')
+          print('Windows smoke import OK')
+          PY
 
       - name: PowerShell syntax check (Windows launchers)
         shell: pwsh
