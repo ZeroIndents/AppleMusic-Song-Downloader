@@ -73,7 +73,8 @@ if (-not (Test-VenvOk)) {
 Write-Host "Checking your setup…"
 function Have([string]$Name) { return [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 function Check([string]$Label, [string]$Tool, [string]$YesMsg, [string]$NoMsg) {
-    if (Have $Tool) { ok "$Label: $YesMsg" } else { warn "$Label: $NoMsg" }
+    # ${Label}: — the braces stop PowerShell parsing "$Label:" as a variable ref.
+    if (Have $Tool) { ok "${Label}: $YesMsg" } else { warn "${Label}: $NoMsg" }
 }
 Check "gamdl  (Apple Music engine)" "gamdl" "found" "missing — install:  pip install gamdl"
 Check "ffmpeg (FLAC / player)"      "ffmpeg" "found" "missing — install:  winget install Gyan.FFmpeg"

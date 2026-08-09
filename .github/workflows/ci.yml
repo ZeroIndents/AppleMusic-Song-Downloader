@@ -50,11 +50,11 @@ jobs:
             $tokens = $null; $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
-              Write-Host "Syntax errors in $f:"
+              Write-Host "Syntax errors in ${f}:"
               $errors | ForEach-Object { Write-Host "  $($_.Message) (line $($_.Extent.StartLineNumber))" }
               exit 1
             }
-            Write-Host "PS parse OK: $f"
+            Write-Host "PS parse OK: ${f}"
           }
 
       - name: Smoke import (app + modules load)
@@ -130,9 +130,9 @@ jobs:
             $tokens = $null; $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
-              Write-Host "Syntax errors in $f:"
+              Write-Host "Syntax errors in ${f}:"
               $errors | ForEach-Object { Write-Host "  $($_.Message) (line $($_.Extent.StartLineNumber))" }
               exit 1
             }
-            Write-Host "PS parse OK: $f"
+            Write-Host "PS parse OK: ${f}"
           }
