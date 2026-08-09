@@ -28,11 +28,42 @@ Navidrome, or any home music server.
 
 ---
 
+## ⚡ One-command install (macOS only)
+
+> **Platform support:** this installer is **macOS only** for now (Intel & Apple
+> Silicon). **Linux support is coming soon.** The app itself is plain Python and
+> portable; the macOS-specific bits are the launchers and the wrapper setup.
+
+**New machine?** One command downloads everything, installs Homebrew + gamdl +
+ffmpeg, clones the repo, creates the Python environment and prints your next
+steps:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gavinraspberrypi/AppleMusic-Song-Downloader/main/install.sh | bash
+```
+
+Already cloned it? Just run it from inside the repo:
+
+```bash
+./install.sh
+```
+
+What it does (and what it deliberately does **not**):
+
+- ✅ Checks you're on macOS (with a clear message otherwise)
+- ✅ Installs Homebrew, git, python3, ffmpeg, and **gamdl** (and pins gamdl so
+  `brew upgrade` can't silently break downloads)
+- ✅ Clones the repo (bootstrap mode) and installs the Python dependencies
+- ❌ Does **not** ask for your Apple ID, cookies, or APK — those stay manual
+  (export cookies → Step 1, optional lossless wrapper → Step 3)
+
+---
+
 ## What you need
 
 | Requirement | Status | Notes |
 |---|---|---|
-| macOS + Python 3.10+ | ✅ 3.14.6 | |
+| macOS + Python 3.10+ | ✅ 3.14.6 | Intel & Apple Silicon; Linux coming soon |
 | gamdl | ✅ v3.8.5 | `brew install gamdl` |
 | ffmpeg | ✅ v8.1.2 | `brew install ffmpeg` (needed for FLAC) |
 | gytmdl + votify | ✅ via pip | installed by `setup.sh` (pinned in requirements.txt) |
