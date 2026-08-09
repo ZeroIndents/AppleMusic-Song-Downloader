@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Music High Res — Apple Music grabber</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23fa2d48'/%3E%3Cstop offset='.55' stop-color='%23af52de'/%3E%3Cstop offset='1' stop-color='%235e5ce6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cg fill='%23fff' transform='rotate(-8 32 34)'%3E%3Cellipse cx='17' cy='40' rx='9.4' ry='6.8' transform='rotate(-24 17 40)'/%3E%3Cellipse cx='46' cy='33' rx='9.4' ry='6.8' transform='rotate(-24 46 33)'/%3E%3Crect x='14.9' y='10.5' width='4.2' height='28' rx='2.1'/%3E%3Crect x='43.9' y='10.5' width='4.2' height='21' rx='2.1'/%3E%3Crect x='14.4' y='9.8' width='34.2' height='5.6' rx='2.8'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0d0d14;
@@ -21,6 +22,7 @@
     --err: #ff453a;
     --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    --grad: linear-gradient(135deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -35,21 +37,54 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* ---------- scrollbars ---------- */
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,.14); border-radius: 999px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.24); background-clip: content-box; }
+  * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+
   /* ---------- layout ---------- */
   .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 22px 80px; }
 
   header {
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px; flex-wrap: wrap; margin-bottom: 26px;
+    position: sticky; top: 0; z-index: 20;
+    margin: -28px -22px 26px; padding: 14px 22px;
+    background: rgba(13,13,20,.72);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border-bottom: 1px solid var(--border);
   }
   .brand { display: flex; align-items: center; gap: 14px; }
+
+  /* ---------- logo ---------- */
   .logo {
-    width: 46px; height: 46px; border-radius: 14px; flex: none;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
-    display: grid; place-items: center; font-weight: 800; font-size: 20px;
-    box-shadow: 0 6px 24px rgba(175,82,222,.35);
+    width: 48px; height: 48px; border-radius: 14px; flex: none;
+    display: grid; place-items: center;
+    position: relative; overflow: hidden;
+    filter: drop-shadow(0 8px 22px rgba(175,82,222,.5));
+    transition: transform .3s cubic-bezier(.2,.8,.3,1.2);
   }
-  .brand h1 { font-size: 20px; letter-spacing: -.2px; }
+  .logo:hover { transform: scale(1.07) rotate(-4deg); }
+  .logo::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,.45) 50%, transparent 68%);
+    transform: translateX(-130%); animation: logo-shine 4.5s ease-in-out infinite;
+  }
+  @keyframes logo-shine {
+    0%, 52% { transform: translateX(-130%); }
+    88%, 100% { transform: translateX(130%); }
+  }
+  .brand h1 { font-size: 20px; letter-spacing: -.2px; display: flex; align-items: baseline; gap: 7px; }
+  .brand h1 .grad {
+    background: var(--grad); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
   .brand p { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 
   .pills { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -63,8 +98,71 @@
   .pill.ok { color: var(--text); }
   .pill.ok .dot { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.8); }
   .pill.warn .dot { background: var(--warn); box-shadow: 0 0 8px rgba(255,214,10,.7); }
-  .pill.bad .dot { background: var(--err); }
+  .pill.bad .dot { background: var(--err); box-shadow: 0 0 8px rgba(255,69,58,.6); }
   .pill .val { font-family: var(--mono); font-size: 11px; }
+
+  /* ---------- onboarding checklist ---------- */
+  .onboard { display: flex; flex-direction: column; gap: 6px; }
+  .ob-row {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(0,0,0,.22); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 13px;
+    transition: border-color .18s ease;
+  }
+  .ob-row:hover { border-color: rgba(255,255,255,.18); }
+  .ob-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex: none;
+    background: #555;
+  }
+  .ob-row.ok .ob-dot { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.7); }
+  .ob-row.warn .ob-dot { background: var(--warn); box-shadow: 0 0 8px rgba(255,214,10,.6); }
+  .ob-row.bad .ob-dot { background: var(--err); box-shadow: 0 0 8px rgba(255,69,58,.6); }
+  .ob-label { font-size: 13px; font-weight: 600; }
+  .ob-tag {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    padding: 2px 7px; border-radius: 999px; flex: none;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .ob-tag.opt { color: #9aa3ff; border-color: rgba(154,163,255,.35); background: rgba(154,163,255,.08); }
+  .ob-detail {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
+  }
+  .ob-hint { width: 100%; font-size: 11.5px; color: var(--muted); line-height: 1.55; padding: 0 2px 2px; }
+  @media (max-width: 640px) { .ob-detail { max-width: 30%; } }
+
+  /* ---------- getting-started drawer (side menu) ---------- */
+  /* Above the player bar (40) AND the toasts (50), below the tag-editor modal
+     (60): a toast must never cover the drawer's ✕ Close button (same corner). */
+  .drawer-back {
+    position: fixed; inset: 0; z-index: 54;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 55;
+    width: min(400px, 92vw); background: #15151f;
+    border-left: 1px solid var(--border);
+    box-shadow: -18px 0 50px rgba(0,0,0,.55);
+    padding: 20px; overflow-y: auto;
+    transform: translateX(105%);
+    transition: transform .28s cubic-bezier(.2,.8,.3,1);
+  }
+  .drawer.open { transform: none; }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .drawer-head h3 {
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.4px; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 0;
+  }
+  .drawer-head h3 .num {
+    font-family: var(--mono); font-size: 10.5px; color: var(--accent-2);
+    border: 1px solid rgba(175,82,222,.35); background: rgba(175,82,222,.12);
+    border-radius: 6px; padding: 2px 6px; letter-spacing: .5px;
+  }
+  #onboard-summary { margin-bottom: 14px; }
+  .pill.click { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+  .pill.click:hover { border-color: rgba(175,82,222,.5); background: rgba(175,82,222,.1); }
 
   /* ---------- cards ---------- */
   .card {
@@ -74,12 +172,28 @@
     padding: 22px;
     margin-bottom: 18px;
     backdrop-filter: blur(12px);
-    transition: border-color .2s ease;
+    transition: border-color .2s ease, transform .25s ease, box-shadow .25s ease;
+    animation: rise .45s cubic-bezier(.2,.7,.3,1) both;
   }
+  .card:nth-child(2) { animation-delay: .05s; }
+  .card:nth-child(3) { animation-delay: .1s; }
+  .card:nth-child(4) { animation-delay: .15s; }
+  .card:nth-child(5) { animation-delay: .2s; }
+  .card:nth-child(6) { animation-delay: .25s; }
+  .card:hover { border-color: rgba(255,255,255,.16); }
   .card h2 {
     font-size: 13px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 1.4px; color: var(--muted); margin-bottom: 16px;
     display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .num {
+    font-family: var(--mono); font-size: 10.5px; color: var(--accent-2);
+    border: 1px solid rgba(175,82,222,.35); background: rgba(175,82,222,.12);
+    border-radius: 6px; padding: 2px 6px; letter-spacing: .5px;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
   }
 
   /* ---------- url input ---------- */
@@ -96,6 +210,18 @@
     box-shadow: 0 0 0 3px rgba(175,82,222,.18);
   }
   textarea::placeholder { color: #5c5c6e; }
+  /* ---------- url preview chips ---------- */
+  .url-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .url-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; padding: 6px 12px; border-radius: 999px;
+    background: rgba(175,82,222,.12); border: 1px solid rgba(175,82,222,.35);
+    color: #e8b7ff; animation: rise .3s ease both;
+  }
+  .url-chip .n { font-family: var(--mono); font-weight: 700; color: #fff; }
+  .url-chip.dim { background: var(--panel); border-color: var(--border); color: var(--muted); }
+  .url-chip.err { background: rgba(255,69,58,.08); border-color: rgba(255,69,58,.35); color: #ffc1bd; }
+  .url-chip .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-2); animation: pulse 1s ease-in-out infinite; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 9px; }
   .hint code {
     background: var(--panel-2); border: 1px solid var(--border);
@@ -105,31 +231,44 @@
   /* ---------- quality segmented control ---------- */
   .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
   .seg {
-    display: flex; gap: 4px; background: rgba(0,0,0,.3);
+    position: relative; display: flex; gap: 4px;
+    background: rgba(0,0,0,.3);
     border: 1px solid var(--border); border-radius: 12px; padding: 4px;
     flex-wrap: wrap;
+  }
+  .seg-thumb {
+    position: absolute; top: 4px; bottom: 4px; left: 4px; z-index: 0;
+    background: var(--grad);
+    border-radius: 9px;
+    box-shadow: 0 3px 14px rgba(250,45,72,.4);
+    transition: left .28s cubic-bezier(.2,.8,.3,1.08), width .28s cubic-bezier(.2,.8,.3,1.08);
   }
   .seg button {
     appearance: none; border: 0; cursor: pointer;
     background: transparent; color: var(--muted);
     font: 600 12.5px var(--sans); padding: 8px 14px; border-radius: 9px;
-    transition: all .18s ease;
+    transition: color .18s ease; position: relative; z-index: 1;
   }
   .seg button:hover { color: var(--text); }
-  .seg button.active {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff; box-shadow: 0 3px 14px rgba(250,45,72,.35);
-  }
+  .seg button.active { color: #fff; }
+  .seg-mini button { padding: 5px 11px; font-size: 11.5px; }
 
   .btn {
     appearance: none; border: 0; cursor: pointer;
     font: 600 14px var(--sans); color: #fff;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2) 60%, var(--accent-3));
+    background: var(--grad);
     padding: 12px 26px; border-radius: 12px;
     box-shadow: 0 6px 22px rgba(175,82,222,.3);
     transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
     display: inline-flex; align-items: center; gap: 9px;
+    position: relative; overflow: hidden;
   }
+  .btn::after {
+    content: ""; position: absolute; top: 0; left: -130%; width: 55%; height: 100%;
+    background: linear-gradient(115deg, transparent, rgba(255,255,255,.3), transparent);
+    transform: skewX(-20deg); transition: left .5s ease;
+  }
+  .btn:hover:not(:disabled)::after { left: 135%; }
   .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 9px 28px rgba(175,82,222,.42); }
   .btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -137,6 +276,7 @@
     background: var(--panel-2); border: 1px solid var(--border);
     box-shadow: none; color: var(--text); font-weight: 500;
   }
+  .btn.ghost::after { display: none; }
   .btn.ghost:hover:not(:disabled) { filter: brightness(1.2); box-shadow: none; }
   .btn.small { padding: 7px 14px; font-size: 12.5px; border-radius: 9px; }
 
@@ -149,9 +289,14 @@
 
   /* ---------- settings drawer ---------- */
   .settings { display: none; }
-  .settings.open { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 22px; }
+  .settings.open { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 22px; animation: rise .3s ease both; }
   .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
-  .field input[type=text], .field input[type=number], .field select {
+  /* .field label (block) beats .toggle (flex) on specificity — restore the
+     switch + label row for every toggle sitting inside a settings field. The
+     label text is a bare text node (not a .toggle span), so restore its color
+     and size too, matching the standalone toggles elsewhere in the UI. */
+  .field label.toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; color: var(--text); font-size: 13px; }
+  .field input[type=text], .field input[type=password], .field input[type=number], .field select {
     width: 100%; background: rgba(0,0,0,.35); color: var(--text);
     border: 1px solid var(--border); border-radius: 9px;
     padding: 9px 12px; font-size: 13px; font-family: var(--mono); outline: none;
@@ -167,8 +312,9 @@
   .switch::after {
     content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px;
     border-radius: 50%; background: #fff; transition: transform .2s ease;
+    box-shadow: 0 1px 4px rgba(0,0,0,.4);
   }
-  .toggle input:checked + .switch { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .toggle input:checked + .switch { background: var(--grad); }
   .toggle input:checked + .switch::after { transform: translateX(16px); }
   .toggle span { font-size: 13px; color: var(--text); }
   .settings-actions { grid-column: 1 / -1; display: flex; gap: 10px; }
@@ -178,22 +324,28 @@
   .job {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; padding: 14px 16px;
-    transition: border-color .2s ease;
+    transition: border-color .2s ease, transform .2s ease;
+    /* No entrance animation: the job list is re-rendered on every 1.5s poll,
+       so an animation would replay (flicker) for all cards during downloads. */
   }
-  .job:hover { border-color: rgba(255,255,255,.18); }
+  .job:hover { border-color: rgba(255,255,255,.2); transform: translateY(-1px); }
+  .job.running { border-color: rgba(175,82,222,.35); }
   .job-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .job-status {
     width: 9px; height: 9px; border-radius: 50%; flex: none;
     background: #555; position: relative;
   }
-  .job-status.running { background: var(--accent-2); animation: pulse 1.2s ease-in-out infinite; }
+  .job-status.running { background: var(--accent-2); animation: pulse 1.2s ease-in-out infinite; box-shadow: 0 0 10px rgba(175,82,222,.7); }
   .job-status.queued { background: var(--warn); }
-  .job-status.done { background: var(--ok); }
+  .job-status.done { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.5); }
   .job-status.failed { background: var(--err); }
   .job-status.cancelled { background: #777; }
   @keyframes pulse { 50% { opacity: .35; } }
   .job-title { font-size: 13.5px; font-weight: 600; }
   .job-sub { font-size: 12px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+  .job-now { font-size: 12px; color: var(--muted); margin-top: 6px; font-family: var(--mono); overflow-wrap: anywhere; }
+  .job-now.err { color: var(--err); }
+  .job-now.cancelled { color: #999; }
   .job-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
   .badge {
     font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
@@ -216,14 +368,38 @@
   .job-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
   .link-btn {
     background: none; border: 0; color: var(--accent-2); cursor: pointer;
-    font: 600 12px var(--sans); padding: 4px 2px;
+    font: 600 12px var(--sans); padding: 4px 2px; transition: color .15s ease;
   }
   .link-btn:hover { text-decoration: underline; }
   .link-btn.danger { color: var(--err); }
-  .elapsed { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+  .elapsed { font-size: 11.5px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 26px 0; }
+  /* progress bars */
+  .job-progress { position: relative; height: 6px; margin-top: 18px; background: rgba(255,255,255,.06); border-radius: 999px; overflow: hidden; }
+  .job-progress-fill {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+    background: var(--grad); border-radius: 999px;
+    transition: width .45s cubic-bezier(.2,.8,.3,1);
+    box-shadow: 0 0 12px rgba(175,82,222,.55);
+  }
+  .job-progress.indeterminate::after {
+    content: ""; position: absolute; inset: 0; width: 38%; border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--accent-2), transparent);
+    animation: slide 1.15s ease-in-out infinite;
+  }
+  @keyframes slide { from { transform: translateX(-110%); } to { transform: translateX(370%); } }
+  .job-progress-label { position: absolute; right: 0; top: -15px; font: 600 10.5px var(--mono); color: var(--muted); }
+  .job-result { font-size: 12px; font-weight: 600; margin-top: 9px; color: var(--ok); }
+  .job-result.warn { color: var(--warn); }
+
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 34px 0; }
   .empty b { color: var(--text); }
+  .empty-note {
+    width: 44px; height: 44px; margin: 0 auto 12px; display: block;
+    animation: float 3.2s ease-in-out infinite;
+    filter: drop-shadow(0 6px 14px rgba(175,82,222,.35));
+  }
+  @keyframes float { 50% { transform: translateY(-5px); } }
 
   /* ---------- wrapper / login panel ---------- */
   .w-state { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -245,6 +421,34 @@
   .code-row input:focus { border-color: rgba(175,82,222,.65); }
   .w-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
+  /* ---------- wrapper setup wizard + login ---------- */
+  .w-login {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px 14px; margin-top: 14px; padding: 14px;
+    border: 1px dashed var(--border); border-radius: 12px;
+    background: rgba(0,0,0,.18); animation: rise .3s ease both;
+  }
+  .w-login .btn, .w-login .hint { align-self: end; }
+  .w-login .hint { margin-top: 0; }
+  .w-setup-toggle-row { margin-top: 16px; }
+  #w-setup {
+    margin-top: 12px; padding: 14px;
+    border: 1px dashed var(--border); border-radius: 12px;
+    background: rgba(0,0,0,.18);
+  }
+  .w-setup-status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .badge.ok { color: #b8ffd0; border-color: rgba(48,209,88,.4); background: rgba(48,209,88,.1); }
+  .badge.warn { color: #ffe9a3; border-color: rgba(255,214,10,.4); background: rgba(255,214,10,.07); }
+  .badge.bad { color: #ffc1bd; border-color: rgba(255,69,58,.45); background: rgba(255,69,58,.08); }
+  #w-setup .field label { font-size: 11.5px; }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+  .code-row.shake { animation: shake .45s ease; }
+
   /* ---------- migrate ---------- */
   .mig-table { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
   .mig-row {
@@ -261,6 +465,125 @@
   .muted-sm { color: var(--muted); font-size: 11.5px; }
   .mig-row .badge { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* ---------- library ---------- */
+  .lib-stats { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+  .lib-group { margin-bottom: 14px; }
+  .lib-group h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--accent-2); margin-bottom: 8px; }
+  .lib-artist {
+    border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.25);
+    margin-bottom: 8px; overflow: hidden; transition: border-color .18s ease;
+  }
+  .lib-artist[open] { border-color: rgba(175,82,222,.45); }
+  .lib-artist summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px;
+    padding: 11px 14px; font-size: 13.5px; font-weight: 600; user-select: none;
+    transition: background .15s ease;
+  }
+  .lib-artist summary::-webkit-details-marker { display: none; }
+  .lib-artist summary:hover { background: rgba(255,255,255,.04); }
+  .lib-artist summary::before {
+    content: "▸"; color: var(--muted); font-size: 11px; transition: transform .2s ease;
+  }
+  .lib-artist[open] summary::before { transform: rotate(90deg); color: var(--accent-2); }
+  .lib-artist .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .lib-albums { padding: 0 14px 10px 34px; display: flex; flex-direction: column; gap: 6px; }
+  .lib-album { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #d9d9e6; }
+  .lib-album .cnt { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: #6b6b82; }
+  .lib-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 22px 0; }
+  .lib-playlist {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 6px;
+    font-size: 13px; background: rgba(0,0,0,.18);
+  }
+  .lib-playlist .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* ---------- in-app player bar ---------- */
+  #player-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
+    background: rgba(16,16,26,.92); backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border-top: 1px solid var(--border);
+    padding: 10px 20px;
+    display: none; align-items: center; gap: 14px;
+  }
+  #player-bar.show { display: flex; }
+  .pb-art {
+    width: 44px; height: 44px; border-radius: 10px; flex: none;
+    background: var(--grad); display: grid; place-items: center;
+    font-size: 18px; box-shadow: 0 4px 14px rgba(175,82,222,.4);
+    overflow: hidden;
+  }
+  .pb-art img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px; }
+  .pb-buff { font-size: 13px; color: var(--accent-2); font-weight: 800; animation: pulse 1s ease-in-out infinite; user-select: none; }
+  .pb-info { min-width: 0; flex: 1; }
+  .pb-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pb-sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pb-controls { display: flex; align-items: center; gap: 6px; }
+  .pb-btn {
+    appearance: none; border: 0; cursor: pointer;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--panel-2); color: var(--text);
+    font-size: 14px; display: grid; place-items: center;
+    transition: background .15s ease, transform .12s ease;
+  }
+  .pb-btn:hover { background: rgba(255,255,255,.16); transform: scale(1.06); }
+  .pb-btn.play { width: 40px; height: 40px; background: var(--grad); box-shadow: 0 3px 12px rgba(175,82,222,.45); }
+  .pb-progress { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+  .pb-time { font: 600 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pb-track {
+    appearance: none; flex: 1; height: 5px; border-radius: 999px;
+    background: rgba(255,255,255,.12); outline: none; cursor: pointer;
+  }
+  .pb-track::-webkit-slider-thumb {
+    appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent-2); box-shadow: 0 0 8px rgba(175,82,222,.6);
+  }
+  .pb-track::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; border: 0;
+    background: var(--accent-2); cursor: pointer;
+  }
+  .pb-volume { display: flex; align-items: center; gap: 8px; }
+  .pb-volume input { width: 90px; }
+  @media (max-width: 720px) {
+    #player-bar { flex-wrap: wrap; padding: 10px 14px; }
+    .pb-progress { order: 3; width: 100%; min-width: 0; }
+    .pb-volume { display: none; }
+  }
+
+  /* ---------- stats dashboard ---------- */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin: 12px 0;
+  }
+  .stat-card {
+    background: rgba(0,0,0,.3); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .stat-card .v { font-size: 22px; font-weight: 700; letter-spacing: -.4px; }
+  .stat-card .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; }
+  .stat-bars { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+  .stat-bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .stat-bar-row .lbl { width: 90px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat-bar-track { flex: 1; height: 8px; background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; }
+  .stat-bar-fill { height: 100%; background: var(--grad); border-radius: 999px; transition: width .5s cubic-bezier(.2,.8,.3,1); }
+  .stat-bar-row .n { font: 600 11px var(--mono); color: var(--muted); width: 44px; text-align: right; }
+
+  /* ---------- tag editor modal ---------- */
+  .modal-back {
+    position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.6);
+    backdrop-filter: blur(6px); display: grid; place-items: center; padding: 20px;
+  }
+  .modal {
+    background: #1a1a28; border: 1px solid var(--border); border-radius: 16px;
+    width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto;
+    padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    animation: rise .25s ease both;
+  }
+  .modal h3 { font-size: 14px; margin-bottom: 4px; }
+  .modal .muted-sm { margin-bottom: 14px; }
+  .modal .field { margin-bottom: 12px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+
   /* ---------- toasts ---------- */
   #toasts { position: fixed; top: 18px; right: 18px; z-index: 50; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
   .toast {
@@ -270,15 +593,28 @@
   }
   .toast.err { border-color: rgba(255,69,58,.5); }
   .toast.ok { border-color: rgba(48,209,88,.5); }
+  .toast-ic {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px; font-weight: 800;
+    background: rgba(255,255,255,.08); color: var(--muted);
+  }
+  .toast.ok .toast-ic { background: rgba(48,209,88,.15); color: var(--ok); }
+  .toast.err .toast-ic { background: rgba(255,69,58,.15); color: var(--err); }
   @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
 
   footer { margin-top: 40px; text-align: center; color: #5c5c6e; font-size: 12px; line-height: 1.8; }
   footer code { font-family: var(--mono); font-size: 11px; }
+  #ver { display: block; margin-top: 6px; font-family: var(--mono); font-size: 11px; color: #5c5c6e; letter-spacing: .3px; }
 
   @media (max-width: 640px) {
     .wrap { padding: 18px 14px 60px; }
+    header { margin: -18px -14px 20px; padding: 12px 14px; }
     .card { padding: 16px; }
     .btn { width: 100%; justify-content: center; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 </style>
 </head>
@@ -287,26 +623,51 @@
 
   <header>
     <div class="brand">
-      <div class="logo">♪</div>
+      <div class="logo" title="Music High Res">
+        <svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true">
+          <defs>
+            <linearGradient id="mhr-tile" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#fa2d48"/><stop offset=".55" stop-color="#af52de"/><stop offset="1" stop-color="#5e5ce6"/>
+            </linearGradient>
+            <radialGradient id="mhr-halo" cx=".5" cy=".5" r=".5">
+              <stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect x="0" y="0" width="64" height="64" rx="16" fill="url(#mhr-tile)"/>
+          <circle cx="32" cy="34" r="30" fill="url(#mhr-halo)"/>
+          <rect x=".75" y=".75" width="62.5" height="62.5" rx="15.25" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>
+          <g transform="rotate(-8 32 34)">
+            <ellipse cx="17" cy="40" rx="9.4" ry="6.8" transform="rotate(-24 17 40)" fill="#fff"/>
+            <ellipse cx="46" cy="33" rx="9.4" ry="6.8" transform="rotate(-24 46 33)" fill="#fff"/>
+            <rect x="14.9" y="10.5" width="4.2" height="28" rx="2.1" fill="#fff"/>
+            <rect x="43.9" y="10.5" width="4.2" height="21" rx="2.1" fill="#fff"/>
+            <rect x="14.4" y="9.8" width="34.2" height="5.6" rx="2.8" fill="#fff"/>
+          </g>
+        </svg>
+      </div>
       <div>
-        <h1>Music High Res</h1>
+        <h1>Music <span class="grad">High Res</span></h1>
         <p>Apple Music → lossless ALAC, on demand</p>
       </div>
     </div>
     <div class="pills" id="pills">
       <div class="pill" id="pill-gamdl"><span class="dot"></span>gamdl <span class="val">…</span></div>
+      <div class="pill" id="pill-ytm"><span class="dot"></span>gytmdl <span class="val">…</span></div>
+      <div class="pill" id="pill-spotify"><span class="dot"></span>votify <span class="val">…</span></div>
       <div class="pill" id="pill-ffmpeg"><span class="dot"></span>FFmpeg</div>
       <div class="pill" id="pill-cookies"><span class="dot"></span>Cookies</div>
       <div class="pill" id="pill-wrapper"><span class="dot"></span>Wrapper</div>
       <div class="pill" id="pill-flac"><span class="dot"></span>Auto-FLAC</div>
+      <div class="pill click" id="pill-setup" title="Setup checklist — click to open"><span class="dot"></span>Setup <span class="val">…</span></div>
     </div>
   </header>
 
   <section class="card">
-    <h2>1 · Paste Apple Music links</h2>
-    <textarea id="urls" placeholder="https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512&#10;https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511&#10;&#10;Songs, albums, playlists, artists and music videos all work — one per line."></textarea>
+    <h2><span class="num">1</span> Paste links (Apple · Spotify · YouTube Music)</h2>
+    <textarea id="urls" placeholder="https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512&#10;https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy&#10;https://music.youtube.com/playlist?list=OLAK5uy_n0S6TjIxrQ6TqB4R9HqG1iX0W5L7PzKvE&#10;&#10;Apple Music → gamdl · Spotify → votify · YouTube Music → gytmdl. One per line."></textarea>
+    <div class="url-preview" id="url-preview"></div>
     <div class="row">
-      <div class="seg" id="codec-seg">
+      <div class="seg" id="codec-seg" data-thumb>
         <button data-codec="alac,aac-web" class="active">ALAC · AAC fallback</button>
         <button data-codec="alac">ALAC only</button>
         <button data-codec="aac-web">AAC 256</button>
@@ -319,8 +680,38 @@
   </section>
 
   <section class="card">
-    <h2>2 · Settings</h2>
-    <div class="settings" id="settings">
+    <h2><span class="num">2</span> Library
+      <span style="margin-left:auto; display:flex; align-items:center; gap:8px">
+        <span class="badge" id="lib-total">…</span>
+        <button class="btn ghost small" id="btn-lib-refresh" title="Refresh">↻</button>
+      </span>
+    </h2>
+    <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap">
+      <input type="text" id="lib-search" placeholder="Search artists, albums, playlists…" style="flex:1; min-width:200px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 12px; font-size:13px; font-family:var(--mono); outline:none">
+      <button class="btn ghost small" id="btn-lib-releases" title="New releases from your artists">✨ Releases</button>
+      <button class="btn ghost small" id="btn-lib-dupes" title="Find duplicate files">Duplicate finder</button>
+      <button class="btn ghost small" id="btn-lib-smart-dupes" title="Same song, different file (audio fingerprint)">🎧 Smart dupes</button>
+      <button class="btn ghost small" id="btn-lib-cleanup" title="Same track in multiple formats (FLAC + ALAC) — delete the ones you don't want">🧹 Cleanup</button>
+      <button class="btn ghost small" id="btn-lib-stats" title="Library dashboard stats">📊 Stats</button>
+      <button class="btn ghost small" id="btn-lib-ledger" title="SQLite ledger of everything downloaded — the authoritative 'do I own this?' index">📒 Ledger</button>
+      <button class="btn ghost small" id="btn-lib-import" title="Import an Apple Music library.xml">📥 Import</button>
+      <button class="btn ghost small" id="btn-lib-export" title="Download a JSON backup">⬇ Backup</button>
+    </div>
+    <div id="lib-extra" style="display:none"></div>
+    <div id="lib-root"><div class="lib-empty">Scanning your music folder…</div></div>
+    <div class="hint" id="lib-hint" style="display:none"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">3</span> Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
+    <div class="jobs" id="jobs"><div class="empty"><svg class="empty-note" viewBox="0 0 24 24"><defs><linearGradient id="en" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fa2d48"/><stop offset="1" stop-color="#af52de"/></linearGradient></defs><path fill="url(#en)" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>Nothing yet — paste links above and hit <b>Download</b>.</div></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">4</span> Settings
+      <span style="margin-left:auto"><button class="btn ghost small" id="btn-settings-fold" title="Show/hide settings">Hide</button></span>
+    </h2>
+    <div class="settings open" id="settings">
       <div class="field">
         <label for="f-output">Output folder</label>
         <input type="text" id="f-output" placeholder="~/Music/Apple Music">
@@ -328,6 +719,32 @@
       <div class="field">
         <label for="f-cookies">Cookies file (Netscape format)</label>
         <input type="text" id="f-cookies" placeholder="cookies.txt">
+      </div>
+      <div class="field">
+        <label for="f-ytm-itag">YouTube Music audio quality</label>
+        <select id="f-ytm-itag">
+          <option value="140">AAC 128k (free)</option>
+          <option value="141">AAC 256k (Premium)</option>
+          <option value="774">Opus 256k (Premium)</option>
+        </select>
+        <div class="hint" style="margin-top:6px">Premium itags (256k) need a YouTube cookies file. Free 128k works without cookies.</div>
+      </div>
+      <div class="field">
+        <label for="f-ytm-cookies">YouTube Music cookies (for Premium itags)</label>
+        <input type="text" id="f-ytm-cookies" placeholder="(empty = same as Cookies file)">
+      </div>
+      <div class="field">
+        <label for="f-spotify-quality">Spotify audio quality</label>
+        <select id="f-spotify-quality">
+          <option value="160">160kbps (free accounts)</option>
+          <option value="320,160">320kbps (Premium)</option>
+        </select>
+        <div class="hint" style="margin-top:6px">320kbps needs a Premium account. ⚠️ Spotify has suspended accounts caught using third-party downloaders — your call.</div>
+      </div>
+      <div class="field">
+        <label for="f-spotify-cookies">Spotify cookies (required for Spotify downloads)</label>
+        <input type="text" id="f-spotify-cookies" placeholder="(empty = same as Cookies file)">
+        <div class="hint" style="margin-top:6px">Export from <code>open.spotify.com</code> with the “Get cookies.txt LOCALLY” extension.</div>
       </div>
       <div class="field">
         <label for="f-cover">Cover size (px)</label>
@@ -349,6 +766,43 @@
         <div style="margin-top:8px"><input type="text" id="f-wrapper-url" placeholder="http://127.0.0.1"></div>
       </div>
       <div class="field">
+        <label for="f-apple-engine">Apple Music engine</label>
+        <select id="f-apple-engine">
+          <option value="gamdl">gamdl (glomatico — default)</option>
+          <option value="amdl">amdl (zhaarey — stream decrypt · word-by-word lyrics)</option>
+        </select>
+        <div class="hint" style="margin-top:6px">Both engines need a wrapper on port 10020, so only one can run at a time — the Wrapper panel stops the other automatically when you switch.</div>
+      </div>
+      <div id="f-amdl-settings" style="display:none">
+        <div class="field">
+          <label for="f-amdl-atmos">Dolby Atmos bitrate cap (kbps)</label>
+          <select id="f-amdl-atmos">
+            <option value="2768">2768 (max)</option>
+            <option value="2448">2448</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-amdl-alac">ALAC max sample rate</label>
+          <select id="f-amdl-alac">
+            <option value="192000">192 kHz (max)</option>
+            <option value="96000">96 kHz</option>
+            <option value="48000">48 kHz</option>
+            <option value="44100">44.1 kHz</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-amdl-lrc">Lyrics type</label>
+          <select id="f-amdl-lrc">
+            <option value="lyrics">Synced (standard)</option>
+            <option value="syllable-lyrics">Word-by-word (syllable)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-amdl-cover">Cover size (WxH px)</label>
+          <input type="text" id="f-amdl-cover" placeholder="5000x5000">
+        </div>
+      </div>
+      <div class="field">
         <label class="toggle"><input type="checkbox" id="f-lyrics"><span class="switch"></span>Synced lyrics (.lrc)</label>
       </div>
       <div class="field">
@@ -361,6 +815,105 @@
       <div class="field">
         <label class="toggle"><input type="checkbox" id="f-overwrite"><span class="switch"></span>Overwrite existing files</label>
       </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-saveplaylist"><span class="switch"></span>Save playlist files (.m3u)</label>
+        <div class="hint" style="margin-top:6px">Each playlist gets a <code>Playlists/{artist}/{title}.m3u</code> listing its tracks in order (no duplication).</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-copylists"><span class="switch"></span>Copy playlist tracks into a folder</label>
+        <div class="hint" style="margin-top:6px">Also <b>copies</b> each playlist's tracks into <code>Playlists/{artist}/{title}/</code> so a playlist is one browsable folder — duplicates files on disk.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-skipowned"><span class="switch"></span>Skip already-downloaded links</label>
+        <div class="hint" style="margin-top:6px">Before downloading, links whose tracks already exist locally are skipped (green <b>✓ owned</b> chips). Re-download by disabling this or toggling Overwrite.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-delta"><span class="switch"></span>Delta sync (skip owned tracks in Spotify/YouTube playlists)</label>
+        <div class="hint" style="margin-top:6px">Re-running a Spotify/YouTube album or playlist only downloads the tracks the <b>SQLite ledger</b> doesn't already own (they're queued as individual track URLs). Apple library URLs are delta natively — gamdl skips existing files.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-engineledger"><span class="switch"></span>Engine skip-ledgers (gamdl/votify --database-path)</label>
+        <div class="hint" style="margin-top:6px">Lets gamdl and votify keep their <b>own</b> SQLite ledgers (<code>data/gamdl.db</code>, <code>data/votify.db</code>) so they never re-download registered media — even after you delete the file. gytmdl has no such flag.</div>
+      </div>
+      <div class="field">
+        <label for="f-mvres">Music video resolution</label>
+        <select id="f-mvres">
+          <option value="240p">240p</option>
+          <option value="360p">360p</option>
+          <option value="480p">480p</option>
+          <option value="540p">540p</option>
+          <option value="720p">720p</option>
+          <option value="1080p">1080p</option>
+          <option value="1440p">1440p</option>
+          <option value="2160p">2160p</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-mvcodec">Music video codec priority</label>
+        <input type="text" id="f-mvcodec" placeholder="h264,h265">
+        <div class="hint" style="margin-top:6px">Comma-separated: <code>h264</code>, <code>h265</code>, <code>ask</code>. H.265 = smaller files, needs player support.</div>
+      </div>
+      <div class="field">
+        <label for="f-coverfmt">Cover art format</label>
+        <select id="f-coverfmt">
+          <option value="jpg">JPG</option>
+          <option value="png">PNG</option>
+          <option value="raw">Raw</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-albumtmpl">Album folder template</label>
+        <input type="text" id="f-albumtmpl" placeholder="{album_artist}/{album}">
+        <div class="hint" style="margin-top:6px">Placeholders: <code>{album_artist}</code>, <code>{album}</code>, <code>{year}</code>… See gamdl docs.</div>
+      </div>
+      <div class="field">
+        <label for="f-playlisttmpl">Playlist folder template</label>
+        <input type="text" id="f-playlisttmpl" placeholder="Playlists/{playlist_artist}">
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-albumdate"><span class="switch"></span>Use album release date (not track date)</label>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-hardlink"><span class="switch"></span>Playlist folders via hardlinks</label>
+        <div class="hint" style="margin-top:6px">Same "copy playlist tracks" feature but with <b>zero extra disk</b> (APFS hardlinks; falls back to copy automatically).</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-verifyq"><span class="switch"></span>Verify audio quality after download</label>
+        <div class="hint" style="margin-top:6px">Probes new files with ffprobe and warns if ALAC was requested but tracks came back AAC.</div>
+      </div>
+      <div class="field">
+        <label for="f-schedule">Download window (HH:MM-HH:MM, 24h)</label>
+        <input type="text" id="f-schedule" placeholder="02:00-06:00">
+        <div class="hint" style="margin-top:6px">Queued downloads wait until this window. Empty = download immediately. May wrap midnight (e.g. 22:00-06:00).</div>
+      </div>
+      <div class="field">
+        <label for="f-concurrent">Max concurrent downloads</label>
+        <input type="number" id="f-concurrent" min="1" max="8" step="1">
+      </div>
+      <div class="field">
+        <label for="f-retries">Auto-retry attempts (1m → 5m → 15m backoff)</label>
+        <input type="number" id="f-retries" min="0" max="3" step="1">
+      </div>
+      <div class="field">
+        <label for="f-storefront">Storefront for matching (Migrate panel)</label>
+        <input type="text" id="f-storefront" placeholder="US">
+        <div class="hint" style="margin-top:6px">Two-letter country code (US, GB, IN, …). Better matches outside the US catalog.</div>
+      </div>
+      <div class="field">
+        <label for="f-scanhook">Music-server rescan hook URL</label>
+        <input type="text" id="f-scanhook" placeholder="https://…/scan (optional)">
+        <div class="hint" style="margin-top:6px">POSTed when a download batch finishes — point it at Navidrome/Plex/Jellyfin's scan endpoint or a webhook.</div>
+      </div>
+      <div class="field">
+        <label for="f-notify">New-release notify URL (webhook)</label>
+        <input type="text" id="f-notify" placeholder="https://ntfy.sh/… (optional)">
+        <div class="hint" style="margin-top:6px">ntfy.sh, Pushover bridge, Slack/Teams webhook, anything accepting JSON — the Releases panel gets a “Notify me” button that POSTs the list here.</div>
+      </div>
+      <div class="field">
+        <label for="f-watch">Watch folder (auto-download dropped links)</label>
+        <input type="text" id="f-watch" placeholder="(empty = off) e.g. ~/Downloads/MHR">
+        <div class="hint" style="margin-top:6px">Drop a <code>.txt</code>/<code>.m3u</code>/<code>.url</code> containing Apple Music, Spotify or YouTube links — it downloads automatically and moves to <code>.done/</code>.</div>
+      </div>
       <div class="settings-actions">
         <button class="btn small" id="btn-save-settings">Save settings</button>
         <span class="hint" style="align-self:center">Saved to <code>config.json</code> next to the app.</span>
@@ -369,7 +922,7 @@
   </section>
 
   <section class="card">
-    <h2>3 · Wrapper &amp; login <span class="badge" id="w-pill" style="margin-left:8px">checking…</span></h2>
+    <h2><span class="num">5</span> Wrapper &amp; login <span class="badge" id="w-pill" style="margin-left:8px">checking…</span></h2>
     <div class="w-state" id="w-state">
       <span class="badge" id="w-auth">auth: …</span>
       <span class="badge" id="w-play">playback: …</span>
@@ -383,6 +936,64 @@
     <div class="w-actions">
       <button class="btn ghost small" id="w-restart">↻ Restart login (send fresh code)</button>
     </div>
+
+    <div class="w-login" id="w-login" style="display:none">
+      <div class="field">
+        <label for="w-login-email">Apple ID email</label>
+        <input id="w-login-email" type="text" autocomplete="username" placeholder="you@icloud.com">
+      </div>
+      <div class="field">
+        <label for="w-login-pass">Password</label>
+        <input id="w-login-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="btn small" id="w-login-btn">Log in to Apple Music</button>
+      <span class="hint" style="align-self:center" id="w-login-hint">Stored in <code>wrapper-v2/.env</code> on this Mac only — never leaves it.</span>
+    </div>
+
+    <div id="amdl-panel" style="display:none">
+      <div class="w-banner" id="amdl-banner">…</div>
+      <div class="w-actions" style="margin-top:10px">
+        <button class="btn small" id="amdl-start">▶ Start amdl wrapper</button>
+        <button class="btn ghost small" id="amdl-stop">Stop</button>
+      </div>
+      <div class="hint" style="margin-top:6px">amdl decrypts through the itouakirai wrapper (ports 10020 + 20020) instead of wrapper-v2. Starting it stops wrapper-v2 automatically — switch back via Settings → Apple engine.</div>
+    </div>
+
+    <div class="w-setup-toggle-row">
+      <button class="btn ghost small" id="btn-w-setup-toggle">⚙ Setup the wrapper (first time?)</button>
+    </div>
+    <div id="w-setup" style="display:none">
+      <div class="w-setup-status">
+        <span class="badge" id="w-setup-docker">Docker: …</span>
+        <span class="badge" id="w-setup-arch">…</span>
+        <span class="badge" id="w-setup-present">wrapper: …</span>
+      </div>
+      <div class="field">
+        <label for="w-setup-apk">Apple Music for Android APK (file path or URL)</label>
+        <input id="w-setup-apk" type="text" placeholder="~/Downloads/apple-music.apk  ·  or  https://…">
+        <div class="hint">Needed once: the Apple Music <b>Android</b> APK, v3.6.0-beta build 1109, from APKMirror. On Intel Macs grab the <code>arm64-v8a + x86_64</code> variant. URL downloads are best-effort — if it fails, download it manually and give the file path.</div>
+      </div>
+      <div class="w-login" style="margin-top:12px">
+        <div class="field">
+          <label for="w-setup-email">Apple ID email (optional)</label>
+          <input id="w-setup-email" type="text" autocomplete="username" placeholder="you@icloud.com">
+        </div>
+        <div class="field">
+          <label for="w-setup-pass">Password (optional)</label>
+          <input id="w-setup-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <span class="hint" style="align-self:center">Optional — leave empty and log in right above after setup finishes.</span>
+      </div>
+      <label class="toggle" id="w-setup-fix-wrap" style="margin-top:14px">
+        <input type="checkbox" id="w-setup-fix"><span class="switch"></span>Apply the Intel-Mac library fix after setup
+      </label>
+      <div class="row">
+        <button class="btn" id="btn-w-setup-start">Start setup</button>
+        <span class="hint" id="w-setup-step" style="align-self:center"></span>
+      </div>
+      <div class="job-log show" id="w-setup-log" style="max-height:200px; display:none"></div>
+    </div>
+
     <div style="margin-top:14px">
       <div class="hint" style="margin-bottom:6px">Wrapper logs (Apple doesn't say which channel it used — watch Gmail incl. spam, SMS, and trusted devices):</div>
       <div class="job-log show" id="w-log" style="max-height:160px"></div>
@@ -390,7 +1001,7 @@
   </section>
 
   <section class="card">
-    <h2>4 · Convert ALAC → FLAC</h2>
+    <h2><span class="num">6</span> Convert ALAC → FLAC</h2>
     <div class="row" style="margin-top:0">
       <div class="field" style="flex:1; min-width:240px">
         <label for="f-convert-dir">Folder to scan (only ALAC files are converted)</label>
@@ -405,7 +1016,7 @@
   </section>
 
   <section class="card">
-    <h2>5 · Migrate from Spotify / YouTube Music</h2>
+    <h2><span class="num">7</span> Migrate from Spotify / YouTube Music</h2>
     <textarea id="migrate-url" placeholder="Paste a Spotify album/playlist link or a YouTube Music album/playlist link…&#10;https://open.spotify.com/album/5vkqYmiPBYLaalcmjujWxK&#10;https://music.youtube.com/playlist?list=OLAK5uy_…" style="min-height:64px"></textarea>
     <div class="row">
       <button class="btn" id="btn-migrate-preview"><span id="migrate-label">Preview &amp; match</span></button>
@@ -415,18 +1026,61 @@
     <div id="migrate-result" style="display:none; margin-top:14px"></div>
   </section>
 
-  <section class="card">
-    <h2>6 · Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
-    <div class="jobs" id="jobs"><div class="empty">Nothing yet — paste links above and hit <b>Download</b>.</div></div>
+  <section class="card" id="logs-card">
+    <h2><span class="num">8</span> System logs
+      <span style="margin-left:auto; display:flex; align-items:center; gap:8px">
+        <div class="seg seg-mini" id="log-file-seg" data-thumb>
+          <button data-file="app" class="active">app.log</button>
+          <button data-file="launcher">launcher.log</button>
+        </div>
+        <button class="btn ghost small" id="btn-log-refresh" title="Refresh">↻</button>
+      </span>
+    </h2>
+    <div class="job-log show" id="syslog" style="max-height:260px"><div>— loading —</div></div>
+    <div class="hint">Auto-refreshes every 5s. These are the same files in <code>logs/</code> next to the app — <code>app.log</code> is the server, <code>launcher.log</code> is startup output.</div>
   </section>
 
   <footer>
+    <div id="player-bar">
+      <div class="pb-art" id="pb-art">🎵</div>
+      <div class="pb-info">
+        <div class="pb-title" id="pb-title">Nothing playing</div>
+        <div class="pb-sub" id="pb-sub">—</div>
+      </div>
+      <div class="pb-controls">
+        <button class="pb-btn" id="pb-prev" title="Previous">⏮</button>
+        <button class="pb-btn play" id="pb-toggle" title="Play/Pause">▶</button>
+        <button class="pb-btn" id="pb-next" title="Next">⏭</button>
+      </div>
+      <div class="pb-progress">
+        <span class="pb-time" id="pb-cur">0:00</span>
+        <input type="range" class="pb-track" id="pb-seek" min="0" max="1000" value="0">
+        <span class="pb-time" id="pb-dur">0:00</span>
+        <span class="pb-buff" id="pb-buff" style="display:none" title="Buffering…">⋯</span>
+      </div>
+      <div class="pb-volume">
+        <span>🔊</span>
+        <input type="range" class="pb-track" id="pb-vol" min="0" max="100" value="80">
+      </div>
+    </div>
     Requires an active Apple Music subscription.<br>
     Lossless ALAC needs the <code>wrapper-v2</code> server (see <code>README.md</code> / <code>setup_wrapper.sh</code>) — until then downloads fall back to AAC 256kbps.
+    <span id="ver"></span>
   </footer>
 </div>
 
 <div id="toasts"></div>
+
+  <!-- Getting-started checklist — slide-in side menu (opened from the header Setup pill) -->
+  <div class="drawer-back" id="drawer-back" style="display:none"></div>
+  <aside class="drawer" id="setup-drawer" role="dialog" aria-modal="true" aria-label="Getting started checklist" aria-hidden="true">
+    <div class="drawer-head">
+      <h3><span class="num">0</span> Getting started</h3>
+      <button class="link-btn" id="drawer-close">✕ Close</button>
+    </div>
+    <div class="badge" id="onboard-summary"></div>
+    <div class="onboard" id="onboard-list" style="margin-top:12px"><div class="lib-empty">Checking your setup…</div></div>
+  </aside>
 
 <script>
 "use strict";
@@ -438,10 +1092,283 @@ const state = {
   jobs: [],
   pollTimer: null,
   expanded: new Set(),
+  // Jobs the user explicitly collapsed — wins over the active-job auto-expand.
+  hidden: new Set(),
 };
+
+/* ---------------- in-app player ---------------- */
+const player = {
+  audio: null,
+  preloadEl: null,    // hidden <audio> warming the next native track's metadata
+  queue: [],          // [{path, title, artist, album, codec, duration}]
+  index: -1,
+  playing: false,
+  seeking: false,
+  transcode: false,   // current track is transcoded on the fly (browser can't decode it)
+  autoAdvanced: false,// guards the transcode near-end auto-skip
+};
+
+// MIME probes: canPlayType() returns "" when the browser cannot decode the
+// codec. ALAC is only supported by Safari — Chrome/Firefox/Edge need the
+// on-the-fly transcode; FLAC/AAC/MP3 play natively everywhere.
+const CODEC_MIME = {
+  flac: 'audio/flac',
+  alac: 'audio/mp4; codecs="alac"',
+  aac: 'audio/mp4; codecs="aac"',
+  aac_he: 'audio/mp4; codecs="aac"',
+  m4a: 'audio/mp4; codecs="aac"',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+};
+
+function trackNeedsTranscode(codec) {
+  if (!codec || !player.audio) return false;
+  const mime = CODEC_MIME[codec];
+  return mime ? !player.audio.canPlayType(mime) : false;
+}
+
+function trackSrc(track) {
+  const base = "/api/audio?path=" + encodeURIComponent(track.path);
+  return trackNeedsTranscode(track.codec) ? base + "&transcode=1" : base;
+}
+
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) return "0:00";
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+function setArt(path) {
+  const el = $("pb-art");
+  el.textContent = "";
+  if (!path) { el.textContent = "🎵"; return; }
+  const im = document.createElement("img");
+  im.alt = "";
+  im.onload = () => { el.textContent = ""; el.appendChild(im); };
+  im.onerror = () => { el.textContent = "🎵"; };
+  im.src = "/api/art?path=" + encodeURIComponent(path);
+}
+
+function setBuffering(on) {
+  const b = $("pb-buff");
+  if (b) b.style.display = on ? "inline" : "none";
+}
+
+function currentPos() {
+  const meta = player.queue[player.index];
+  if (player.transcode && meta && meta.duration) return ($("pb-seek").value / 1000) * meta.duration;
+  return isFinite(player.audio.currentTime) ? player.audio.currentTime : 0;
+}
+
+function seekTo(seconds) {
+  if (!player.audio || !player.audio.src) return;
+  seconds = Math.max(0, seconds);
+  const meta = player.queue[player.index];
+  if (player.transcode) {
+    // Live ADTS streams can't seek via Range — restart the stream at the offset.
+    player.audio.src = "/api/audio?path=" + encodeURIComponent(meta.path) + "&transcode=1&t=" + Math.floor(seconds);
+    $("pb-cur").textContent = fmtTime(seconds);
+    player.audio.play().catch(() => {});
+  } else {
+    player.audio.currentTime = seconds;
+  }
+}
+
+function seekBy(delta) { seekTo(currentPos() + delta); }
+
+function changeVol(delta) {
+  const v = Math.min(100, Math.max(0, (parseFloat($("pb-vol").value) || 0) + delta));
+  $("pb-vol").value = v;
+  player.audio.volume = v / 100;
+  player.audio.muted = false;
+  localStorage.setItem("mhr-vol", String(v));
+}
+
+function muteToggle() {
+  player.audio.muted = !player.audio.muted;
+  $("pb-vol").value = player.audio.muted ? 0 : (parseFloat(localStorage.getItem("mhr-vol")) || 80);
+}
+
+function updateMediaSession(track) {
+  if (!("mediaSession" in navigator)) return;
+  const ms = navigator.mediaSession;
+  try {
+    ms.metadata = new MediaMetadata({
+      title: track.title || "Unknown",
+      artist: track.artist || "",
+      album: track.album || "",
+      artwork: [{ src: "/api/art?path=" + encodeURIComponent(track.path), sizes: "512x512" }],
+    });
+    ms.setActionHandler("play", () => { if (player.audio) player.audio.play(); });
+    ms.setActionHandler("pause", () => { if (player.audio) player.audio.pause(); });
+    ms.setActionHandler("previoustrack", () => playerPrev());
+    ms.setActionHandler("nexttrack", () => playerNext());
+    ms.setActionHandler("seekto", (d) => { if (d && d.seekTime != null) seekTo(d.seekTime); });
+  } catch (e) { /* Media Session is best-effort */ }
+}
+
+function preloadNext() {
+  const nxt = player.queue[player.index + 1];
+  if (!nxt || trackNeedsTranscode(nxt.codec)) return;  // live stream — don't warm it
+  if (!player.preloadEl) {
+    player.preloadEl = new Audio();
+    player.preloadEl.onerror = () => {};  // warming is best-effort
+  }
+  player.preloadEl.preload = "metadata";
+  player.preloadEl.src = "/api/audio?path=" + encodeURIComponent(nxt.path);
+}
+
+function playTrack(track, queue) {
+  if (!player.audio) {
+    player.audio = new Audio();
+    player.audio.preload = "metadata";
+    player.audio.addEventListener("timeupdate", () => {
+      if (!player.seeking) {
+        const d = player.audio.duration;
+        const t = player.audio.currentTime;
+        $("pb-seek").value = (isFinite(d) && d > 0) ? (t / d) * 1000 : 0;
+        $("pb-cur").textContent = fmtTime(t);
+      }
+      // Transcoded streams may not fire 'ended' reliably — auto-advance near the end.
+      const meta = player.queue[player.index];
+      if (player.transcode && meta && meta.duration && !player.autoAdvanced && player.audio.currentTime >= meta.duration - 1.5) {
+        player.autoAdvanced = true;
+        playerNext();
+      }
+    });
+    player.audio.addEventListener("loadedmetadata", () => {
+      if (!player.transcode) $("pb-dur").textContent = fmtTime(player.audio.duration);
+    });
+    player.audio.addEventListener("ended", () => { playerNext(); });
+    player.audio.addEventListener("play", () => { player.playing = true; $("pb-toggle").textContent = "⏸"; setBuffering(false); });
+    player.audio.addEventListener("pause", () => { player.playing = false; $("pb-toggle").textContent = "▶"; });
+    player.audio.addEventListener("waiting", () => setBuffering(true));
+    player.audio.addEventListener("stalled", () => setBuffering(true));
+    player.audio.addEventListener("playing", () => setBuffering(false));
+    player.audio.addEventListener("canplay", () => setBuffering(false));
+    player.audio.addEventListener("error", () => {
+      const meta = player.queue[player.index];
+      const codec = meta && meta.codec ? meta.codec.toUpperCase() : "";
+      const hint = (codec && trackNeedsTranscode(meta.codec)) ? ` — ${codec} can't be decoded in this browser` : "";
+      toast(`Couldn't play this track${hint}.`, "err");
+      // Skip to the next track so an album keeps flowing — but stop after two
+      // consecutive failures so a dead server doesn't churn through the album.
+      player.errStreak = (player.errStreak || 0) + 1;
+      if (player.errStreak <= 2 && player.queue.length && player.index < player.queue.length - 1) playerNext();
+    });
+    $("pb-seek").addEventListener("input", () => {
+      if (!player.audio.src) return;
+      player.seeking = true;
+      const meta = player.queue[player.index];
+      const dur = (player.transcode && meta) ? meta.duration : player.audio.duration;
+      if (isFinite(dur) && dur > 0) $("pb-cur").textContent = fmtTime(($("pb-seek").value / 1000) * dur);
+    });
+    $("pb-seek").addEventListener("change", () => {
+      if (!player.audio.src) return;
+      const meta = player.queue[player.index];
+      if (player.transcode) {
+        if (meta && meta.duration) seekTo(($("pb-seek").value / 1000) * meta.duration);
+      } else if (isFinite(player.audio.duration) && player.audio.duration > 0) {
+        player.audio.currentTime = ($("pb-seek").value / 1000) * player.audio.duration;
+      }
+      player.seeking = false;
+    });
+    $("pb-vol").addEventListener("input", () => {
+      if (!player.audio) return;
+      player.audio.volume = $("pb-vol").value / 100;
+      player.audio.muted = false;
+      localStorage.setItem("mhr-vol", $("pb-vol").value);
+    });
+    $("pb-toggle").addEventListener("click", () => { if (player.audio && player.audio.src) playerToggle(); });
+    $("pb-prev").addEventListener("click", () => playerPrev());
+    $("pb-next").addEventListener("click", () => playerNext());
+    // Keyboard shortcuts (Space/arrows/M) — ignored while typing in a field.
+    document.addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (!player.audio || !player.audio.src) return;
+      if (e.code === "Space") { e.preventDefault(); playerToggle(); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); seekBy(10); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); seekBy(-10); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); changeVol(5); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); changeVol(-5); }
+      else if (e.key.toLowerCase() === "m") { e.preventDefault(); muteToggle(); }
+    });
+  }
+  player.queue = queue || [];
+  player.index = (queue || []).findIndex(t => t.path === track.path);
+  player.transcode = trackNeedsTranscode(track.codec);
+  player.autoAdvanced = false;
+  player.errStreak = 0;
+  player.audio.src = trackSrc(track);
+  // Restore the volume the user last set (or the 80% default).
+  const savedVol = parseFloat(localStorage.getItem("mhr-vol"));
+  player.audio.volume = (isFinite(savedVol) && savedVol >= 0 && savedVol <= 100 ? savedVol : 80) / 100;
+  player.audio.muted = false;
+  $("pb-vol").value = Math.round(player.audio.volume * 100);
+  $("pb-title").textContent = track.title || "Unknown";
+  $("pb-sub").textContent = [track.artist, track.album].filter(Boolean).join(" — ") || "—";
+  $("pb-dur").textContent = (player.transcode && track.duration) ? fmtTime(track.duration) : "0:00";
+  $("pb-cur").textContent = "0:00";
+  $("pb-seek").value = 0;
+  setArt(track.path);
+  updateMediaSession(track);
+  preloadNext();
+  $("player-bar").classList.add("show");
+  player.audio.play().catch(() => {});
+}
+
+function playerToggle() {
+  if (!player.audio || !player.audio.src) return;
+  if (player.audio.paused) player.audio.play().catch(() => {}); else player.audio.pause();
+}
+
+function playerNext() {
+  if (player.queue.length && player.index < player.queue.length - 1) {
+    const t = player.queue[player.index + 1];
+    playTrack(t, player.queue);
+  } else if (player.audio) {
+    player.audio.pause();
+    player.audio.currentTime = 0;
+    player.playing = false;
+    $("pb-toggle").textContent = "▶";
+  }
+}
+function playerPrev() {
+  if (player.queue.length && player.index > 0) {
+    const t = player.queue[player.index - 1];
+    playTrack(t, player.queue);
+  } else if (player.audio) {
+    player.audio.currentTime = 0;
+  }
+}
+
+async function playAlbum(albumPath) {
+  try {
+    const res = await fetch("/api/library/album?path=" + encodeURIComponent(albumPath));
+    const data = await res.json();
+    if (!data.ok || !data.tracks.length) { toast("No playable tracks in that album.", "err"); return; }
+    const albumName = albumPath.split("/").pop() || "";
+    const queue = data.tracks.map(t => ({
+      path: t.path, title: t.title, artist: t.artist,
+      album: t.album || albumName, codec: t.codec, duration: t.duration,
+    }));
+    playTrack(queue[0], queue);
+  } catch (e) { toast("Could not load album: " + e.message, "err"); }
+}
 
 /* ---------------- migrate ---------------- */
 let migrateState = { urls: [] };
+
+// Download-end notification state: tracks the transition all-active → idle.
+let prevActive = false;
+let batchIds = new Set();
+
+// Wrapper auth-state tracking (for OTP auto-focus) + setup-wizard state.
+let lastAuth = null;
+let otpSubmitting = false;
+let setupState = { state: "idle", log: [], docker: { installed: false, running: false }, machine: { apple_silicon: false }, wrapper_present: false };
+let setupFixInitialized = false;
 
 function migrateTable(data) {
   const box = $("migrate-result");
@@ -499,6 +1426,7 @@ async function downloadMigrated() {
   if (!urls.length) { toast("Select at least one matched track.", "err"); return; }
   const btn = $("btn-migrate-download");
   btn.disabled = true;
+  ensureNotifPerm();
   try {
     const res = await fetch("/api/download", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -517,7 +1445,8 @@ async function downloadMigrated() {
 function toast(msg, type = "") {
   const el = document.createElement("div");
   el.className = "toast " + type;
-  el.textContent = msg;
+  const ic = type === "err" ? "✕" : type === "ok" ? "✓" : "ℹ";
+  el.innerHTML = `<span class="toast-ic">${ic}</span><span>${escapeHtml(msg)}</span>`;
   $("toasts").appendChild(el);
   setTimeout(() => el.remove(), 5000);
 }
@@ -525,8 +1454,26 @@ function toast(msg, type = "") {
 /* ---------------- status pills ---------------- */
 function renderPills(status) {
   const gamdl = $("pill-gamdl");
-  gamdl.className = "pill " + (status.gamdl_found ? "ok" : "bad");
+  let gamdlWarn = status.gamdl_pinned_ok === false;
+  if (status.gamdl_latest && status.gamdl && status.gamdl_latest !== status.gamdl && status.gamdl_latest !== (status.gamdl_pinned || "") + "") {
+    gamdlWarn = true;
+  }
+  gamdl.className = "pill " + (status.gamdl_found ? (gamdlWarn ? "warn" : "ok") : "bad");
   gamdl.innerHTML = `<span class="dot"></span>gamdl <span class="val">${status.gamdl || "missing"}</span>`;
+  const ytm = $("pill-ytm");
+  ytm.className = "pill " + (status.ytm_found ? "ok" : "bad");
+  ytm.innerHTML = `<span class="dot"></span>gytmdl <span class="val">${status.ytm_version || "missing"}</span>`;
+  ytm.title = status.ytm_found ? "YouTube Music downloads (gytmdl)" : "gytmdl missing — run: .venv/bin/pip install gytmdl";
+  const spot = $("pill-spotify");
+  spot.className = "pill " + (status.spotify_found ? "ok" : "bad");
+  spot.innerHTML = `<span class="dot"></span>votify <span class="val">${status.spotify_version || "missing"}</span>`;
+  spot.title = status.spotify_found ? "Spotify downloads (votify)" : "votify missing — run: .venv/bin/pip install 'votify[librespot]'";
+  const notes = [];
+  if (status.gamdl_pinned_ok === false) notes.push(`Version ${status.gamdl || "?"} differs from the pinned ${status.gamdl_pinned} — run: brew pin gamdl`);
+  if (status.gamdl_latest && status.gamdl && status.gamdl_latest !== status.gamdl && status.gamdl_latest !== (status.gamdl_pinned || "") + "") {
+    notes.push(`Update available: ${status.gamdl_latest} (you have ${status.gamdl}). To update: brew unpin gamdl && brew upgrade gamdl`);
+  }
+  gamdl.title = notes.join("\n");
 
   const ffmpeg = $("pill-ffmpeg");
   ffmpeg.className = "pill " + (status.ffmpeg_found ? "ok" : "bad");
@@ -557,33 +1504,163 @@ function renderPills(status) {
   updateCodecHint(status);
 }
 
+/* ---------------- getting-started checklist ---------------- */
+async function refreshOnboarding() {
+  try {
+    const res = await fetch("/api/onboarding");
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "checklist failed");
+    state.onboarding = data;
+    renderOnboarding(data);
+  } catch (e) {
+    $("onboard-list").innerHTML = `<div class="lib-empty">Couldn't load the checklist: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderOnboarding(data) {
+  const list = $("onboard-list");
+  const summary = $("onboard-summary");
+  summary.className = "badge " + (data.all_required_ready ? "ok" : "warn");
+  summary.textContent = data.all_required_ready
+    ? `✓ ${data.required_ok}/${data.required_total} ready`
+    : `${data.required_ok}/${data.required_total} ready`;
+  summary.title = data.all_required_ready
+    ? "Everything required is in place — paste a link and hit Download."
+    : "Some required pieces are missing — see the list below.";
+
+  // Header pill: compact readiness indicator that opens this drawer, so the
+  // checklist stays out of the main flow until it's actually needed.
+  const pill = $("pill-setup");
+  if (pill) {
+    pill.className = "pill click " + (data.all_required_ready ? "ok" : (data.required_ok ? "warn" : "bad"));
+    pill.querySelector(".val").textContent = `${data.required_ok}/${data.required_total}`;
+    pill.title = data.all_required_ready
+      ? "Setup ready ✓ — click to open the checklist"
+      : `${data.required_total - data.required_ok} required piece(s) missing — click to open the checklist`;
+  }
+
+  list.innerHTML = data.items.map(it => {
+    const cls = it.required ? (it.ok ? "ok" : "bad") : (it.ok ? "ok" : "warn");
+    const detail = it.ok ? (it.detail || "ready") : (it.detail || "missing");
+    const rows = [
+      `<div class="ob-row ${cls}">`,
+      `<span class="ob-dot"></span>`,
+      `<span class="ob-label">${escapeHtml(it.label)}</span>`,
+      it.required ? `<span class="ob-tag">required</span>` : `<span class="ob-tag opt">optional</span>`,
+      `<span class="ob-detail" title="${escapeHtml(String(detail))}">${escapeHtml(String(detail))}</span>`,
+      `</div>`,
+    ];
+    if (!it.ok && it.hint) {
+      rows.push(`<div class="ob-hint" style="padding-left:34px">${escapeHtml(String(it.hint))}</div>`);
+    }
+    return rows.join("");
+  }).join("");
+}
+
+function openSetupDrawer() {
+  $("setup-drawer").classList.add("open");
+  $("setup-drawer").setAttribute("aria-hidden", "false");
+  $("drawer-back").style.display = "block";
+  $("drawer-close").focus();
+  refreshOnboarding();  // fresh state every time it's opened
+}
+
+function closeSetupDrawer() {
+  $("setup-drawer").classList.remove("open");
+  $("setup-drawer").setAttribute("aria-hidden", "true");
+  $("drawer-back").style.display = "none";
+}
+
 /* ---------------- settings ---------------- */
 function loadSettings(cfg) {
   $("f-output").value = cfg.output_path || "";
   $("f-cookies").value = cfg.cookies_path || "";
+  $("f-ytm-itag").value = cfg.ytm_itag || "140";
+  $("f-ytm-cookies").value = cfg.ytm_cookies_path || "";
+  $("f-spotify-quality").value = cfg.spotify_audio_quality || "160";
+  $("f-spotify-cookies").value = cfg.spotify_cookies_path || "";
   $("f-cover").value = cfg.cover_size || 1200;
   $("f-artist").value = cfg.artist_auto_select || "all-albums";
   $("f-wrapper").checked = !!cfg.use_wrapper;
   $("f-wrapper-url").value = cfg.wrapper_url || "http://127.0.0.1";
+  $("f-apple-engine").value = cfg.apple_engine === "amdl" ? "amdl" : "gamdl";
+  $("f-amdl-atmos").value = cfg.amdl_atmos_max || "2768";
+  $("f-amdl-alac").value = cfg.amdl_alac_max || "192000";
+  $("f-amdl-lrc").value = cfg.amdl_lrc_type || "lyrics";
+  $("f-amdl-cover").value = cfg.amdl_cover_size || "5000x5000";
+  toggleAmdlSettings();
   $("f-lyrics").checked = cfg.synced_lyrics !== false;
   $("f-coverfile").checked = !!cfg.save_cover;
   $("f-flac").checked = !!cfg.convert_to_flac;
   $("f-overwrite").checked = !!cfg.overwrite;
+  $("f-saveplaylist").checked = cfg.save_playlist !== false;
+  $("f-copylists").checked = !!cfg.copy_playlist_folders;
+  $("f-skipowned").checked = !!cfg.skip_owned;
+  $("f-delta").checked = !!cfg.delta_sync;
+  $("f-engineledger").checked = !!cfg.engine_ledger;
+  $("f-mvres").value = cfg.music_video_resolution || "1080p";
+  $("f-mvcodec").value = cfg.music_video_codec_priority || "h264,h265";
+  $("f-coverfmt").value = cfg.cover_format || "jpg";
+  $("f-albumtmpl").value = cfg.album_folder_template || "{album_artist}/{album}";
+  $("f-playlisttmpl").value = cfg.playlist_folder_template || "Playlists/{playlist_artist}";
+  $("f-albumdate").checked = !!cfg.use_album_date;
+  $("f-hardlink").checked = !!cfg.playlist_hardlink;
+  $("f-verifyq").checked = cfg.verify_quality !== false;
+  $("f-schedule").value = cfg.schedule_window || "";
+  $("f-concurrent").value = cfg.max_concurrent || 2;
+  $("f-retries").value = cfg.auto_retry != null ? cfg.auto_retry : 2;
+  $("f-storefront").value = cfg.storefront || "US";
+  $("f-scanhook").value = cfg.scan_hook_url || "";
+  $("f-notify").value = cfg.notify_url || "";
+  $("f-watch").value = cfg.watch_folder || "";
   $("f-convert-dir").value = cfg.output_path || "";
 }
 function collectSettings() {
   return {
     output_path: $("f-output").value.trim(),
     cookies_path: $("f-cookies").value.trim(),
+    ytm_itag: $("f-ytm-itag").value,
+    ytm_cookies_path: $("f-ytm-cookies").value.trim(),
+    spotify_audio_quality: $("f-spotify-quality").value,
+    spotify_cookies_path: $("f-spotify-cookies").value.trim(),
     cover_size: parseInt($("f-cover").value, 10) || 1200,
     artist_auto_select: $("f-artist").value,
     use_wrapper: $("f-wrapper").checked,
     wrapper_url: $("f-wrapper-url").value.trim() || "http://127.0.0.1",
+    apple_engine: $("f-apple-engine").value,
+    amdl_atmos_max: $("f-amdl-atmos").value,
+    amdl_alac_max: $("f-amdl-alac").value,
+    amdl_lrc_type: $("f-amdl-lrc").value,
+    amdl_cover_size: $("f-amdl-cover").value.trim() || "5000x5000",
     synced_lyrics: $("f-lyrics").checked,
     save_cover: $("f-coverfile").checked,
     convert_to_flac: $("f-flac").checked,
     overwrite: $("f-overwrite").checked,
+    save_playlist: $("f-saveplaylist").checked,
+    copy_playlist_folders: $("f-copylists").checked,
+    skip_owned: $("f-skipowned").checked,
+    delta_sync: $("f-delta").checked,
+    engine_ledger: $("f-engineledger").checked,
+    music_video_resolution: $("f-mvres").value,
+    music_video_codec_priority: $("f-mvcodec").value.trim() || "h264,h265",
+    cover_format: $("f-coverfmt").value,
+    album_folder_template: $("f-albumtmpl").value.trim() || "{album_artist}/{album}",
+    playlist_folder_template: $("f-playlisttmpl").value.trim() || "Playlists/{playlist_artist}",
+    use_album_date: $("f-albumdate").checked,
+    playlist_hardlink: $("f-hardlink").checked,
+    verify_quality: $("f-verifyq").checked,
+    schedule_window: $("f-schedule").value.trim(),
+    max_concurrent: parseInt($("f-concurrent").value, 10) || 2,
+    auto_retry: parseInt($("f-retries").value, 10) || 0,
+    storefront: ($("f-storefront").value.trim() || "US").toUpperCase(),
+    scan_hook_url: $("f-scanhook").value.trim(),
+    notify_url: $("f-notify").value.trim(),
+    watch_folder: $("f-watch").value.trim(),
   };
+}
+function toggleAmdlSettings() {
+  const amdl = $("f-apple-engine").value === "amdl";
+  $("f-amdl-settings").style.display = amdl ? "block" : "none";
 }
 async function saveSettings() {
   const prevOutput = $("f-output").value.trim();
@@ -597,7 +1674,7 @@ async function saveSettings() {
     if ($("f-convert-dir").value.trim() === prevOutput) {
       $("f-convert-dir").value = $("f-output").value.trim();
     }
-    toast("Settings saved ✓", "ok"); await refreshStatus();
+    toast("Settings saved ✓", "ok"); await refreshStatus(); refreshOnboarding();
   }
   else toast("Could not save settings", "err");
 }
@@ -607,23 +1684,51 @@ function fmtTime(ts) {
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
+function fmtElapsed(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 function fmtUrl(u) {
   try { const x = new URL(u); return x.hostname + x.pathname + (x.search ? " …" : ""); }
   catch { return u.length > 70 ? u.slice(0, 70) + "…" : u; }
 }
+function emptyJobsHTML() {
+  return `<div class="empty"><svg class="empty-note" viewBox="0 0 24 24"><defs><linearGradient id="en2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fa2d48"/><stop offset="1" stop-color="#af52de"/></linearGradient></defs><path fill="url(#en2)" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>Nothing yet — paste links above and hit <b>Download</b>.</div>`;
+}
+function buildProgress(j) {
+  const wrap = document.createElement("div");
+  wrap.className = "job-progress";
+  if (j.kind === "convert") {
+    const m = j.last_message && j.last_message.match(/^\[(\d+)\/(\d+)\]/);
+    const pct = m ? Math.min(100, Math.round((+m[1] / +m[2]) * 100)) : 0;
+    const fill = document.createElement("div");
+    fill.className = "job-progress-fill";
+    fill.style.width = pct + "%";
+    wrap.appendChild(fill);
+    const label = document.createElement("span");
+    label.className = "job-progress-label";
+    label.textContent = m ? `${m[1]}/${m[2]} files` : "scanning…";
+    wrap.appendChild(label);
+  } else {
+    wrap.classList.add("indeterminate");
+  }
+  return wrap;
+}
 function renderJobs() {
   const box = $("jobs");
   if (!state.jobs.length) {
-    box.innerHTML = `<div class="empty">Nothing yet — paste links above and hit <b>Download</b>.</div>`;
+    box.innerHTML = emptyJobsHTML();
     $("btn-clear").style.display = "none";
     return;
   }
   $("btn-clear").style.display = "block";
   box.innerHTML = "";
-  for (const j of state.jobs) {
+  state.jobs.forEach((j, idx) => {
     const card = document.createElement("div");
-    card.className = "job";
+    card.className = "job" + (j.status === "running" ? " running" : "");
     card.dataset.id = j.id;
+    card.style.setProperty("--i", idx);
 
     const isLossless = /alac|atmos|flac/.test(j.codec);
     const isConvert = j.kind === "convert";
@@ -645,7 +1750,9 @@ function renderJobs() {
       : (j.status === "done" ? "Download complete" : j.status === "failed" ? "Download failed" : j.status === "cancelled" ? "Cancelled" : (j.status === "running" ? "Downloading…" : "Queued…"));
     const sub = document.createElement("div");
     sub.className = "job-sub";
-    sub.textContent = `${urlLabel} · started ${fmtTime(j.created_at)}`;
+    // Scheduled jobs (download window) show the wait state instead of a start time.
+    const scheduled = (j.status === "queued" || j.status === "running") && j.last_message && j.last_message.startsWith("Scheduled");
+    sub.textContent = scheduled ? `⏰ ${j.last_message}` : `${urlLabel} · started ${fmtTime(j.created_at)}`;
     ttl.append(title, sub);
 
     const right = document.createElement("div");
@@ -663,12 +1770,23 @@ function renderJobs() {
     }
     const el = document.createElement("span");
     el.className = "elapsed";
-    el.textContent = j.status === "done" || j.status === "failed" || j.status === "cancelled"
-      ? fmtTime(j.updated_at) : "";
+    if (j.status === "running" || j.status === "queued") {
+      el.dataset.start = String(j.created_at);
+      el.textContent = fmtElapsed(Date.now() / 1000 - j.created_at);
+    } else {
+      el.textContent = fmtTime(j.updated_at);
+    }
     right.appendChild(el);
 
     head.append(dot, ttl, right);
-    card.appendChild(head);
+
+    // Live status line (gamdl's current output / failure reason).
+    if (j.last_message && j.status !== "done" && j.status !== "queued") {
+      const now = document.createElement("div");
+      now.className = "job-now" + (j.status === "failed" ? " err" : j.status === "cancelled" ? " cancelled" : "");
+      now.textContent = j.last_message;
+      card.appendChild(now);
+    }
 
     const urls = document.createElement("div");
     urls.className = "job-urls";
@@ -676,14 +1794,22 @@ function renderJobs() {
     urls.style.display = j.urls.length > 1 ? "block" : "none";
     card.appendChild(urls);
 
+    // Progress: determinate for conversions, shimmer for active downloads.
+    if (j.status === "running" || j.status === "queued") {
+      card.appendChild(buildProgress(j));
+    }
+
     const actions = document.createElement("div");
     actions.className = "job-actions";
     const logBtn = document.createElement("button");
     logBtn.className = "link-btn";
-    const showLog = state.expanded.has(j.id);
+    // Active jobs auto-expand so the live download log is visible immediately,
+    // but an explicit "Hide log" click overrides the auto-expand.
+    const showLog = !state.hidden.has(j.id) && (state.expanded.has(j.id) || j.status === "running" || j.status === "queued");
     logBtn.textContent = showLog ? "Hide log" : "Show log";
     logBtn.onclick = () => {
-      if (state.expanded.has(j.id)) state.expanded.delete(j.id); else state.expanded.add(j.id);
+      if (state.expanded.has(j.id)) { state.expanded.delete(j.id); state.hidden.add(j.id); }
+      else { state.expanded.add(j.id); state.hidden.delete(j.id); }
       refreshJob(j.id, true);
     };
     actions.appendChild(logBtn);
@@ -696,6 +1822,25 @@ function renderJobs() {
         await fetch(`/api/jobs/${j.id}/cancel`, { method: "POST" });
       };
       actions.appendChild(cancel);
+    } else if ((j.status === "failed" || j.status === "cancelled") && j.kind === "download") {
+      const retry = document.createElement("button");
+      retry.className = "link-btn";
+      retry.textContent = "↻ Retry";
+      retry.onclick = async () => {
+        retry.disabled = true;
+        retry.textContent = "Queuing…";
+        try {
+          const res = await fetch(`/api/jobs/${j.id}/retry`, { method: "POST" });
+          const data = await res.json();
+          if (!data.ok) { toast(data.error || "Could not retry.", "err"); return; }
+          state.expanded.add(data.job.id);
+          toast(`Retrying ${data.job.url_count} link${data.job.url_count === 1 ? "" : "s"} ✓`, "ok");
+          await refreshJobs();
+        } catch (e) {
+          toast("Network error: " + e.message, "err");
+        }
+      };
+      actions.appendChild(retry);
     }
     card.appendChild(actions);
 
@@ -706,7 +1851,18 @@ function renderJobs() {
     box.appendChild(card);
 
     if (showLog) fetchLog(j.id);
-  }
+
+    // Result summary for finished conversions (done or finished-with-errors).
+    if (isConvert && (j.status === "done" || j.status === "failed") && j.last_message) {
+      const m = j.last_message.match(/(\d+) converted, (\d+) skipped, (\d+) error/);
+      if (m) {
+        const res = document.createElement("div");
+        res.className = "job-result" + (m[3] !== "0" ? " warn" : "");
+        res.textContent = `✓ ${m[1]} converted · ${m[2]} skipped` + (m[3] !== "0" ? ` · ${m[3]} errors` : "");
+        card.appendChild(res);
+      }
+    }
+  });
 }
 function fetchLog(id) {
   fetch(`/api/jobs/${id}`).then(r => r.json()).then(d => {
@@ -725,8 +1881,7 @@ async function refreshJobs() {
   const res = await fetch("/api/jobs");
   const data = await res.json();
   state.jobs = data.jobs;
-  renderJobs();
-  for (const id of state.expanded) fetchLog(id);
+  renderJobs();  // fetches logs for every visible job
 
   const active = state.jobs.some(j => j.status === "running" || j.status === "queued");
   if (active && !state.pollTimer) {
@@ -738,6 +1893,22 @@ async function refreshJobs() {
     clearInterval(state.pollTimer);
     state.pollTimer = null;
   }
+
+  // Download-end notification: accumulate every job seen while active (so
+  // jobs queued mid-batch are counted), then fire once when the batch goes
+  // idle (i.e. the last active job finished).
+  if (active) {
+    state.jobs.forEach(j => { if (j.status === "running" || j.status === "queued") batchIds.add(j.id); });
+  } else if (prevActive && batchIds.size) {
+    const batch = state.jobs.filter(j => batchIds.has(j.id));
+    if (batch.length) {
+      notifyBatch(batch.length, batch.filter(j => j.status === "failed" || j.status === "cancelled").length);
+    }
+    batchIds.clear();
+  }
+  // A batch just finished — refresh the Library view so new tracks appear.
+  if (prevActive && !active) refreshLibrary();
+  prevActive = active;
 }
 async function refreshJob(id, forceLog) {
   await refreshJobs();
@@ -745,14 +1916,852 @@ async function refreshJob(id, forceLog) {
 }
 
 /* ---------------- actions ---------------- */
+/* ---------------- settings drawer ---------------- */
+function toggleSettings() {
+  const s = $("settings");
+  const open = s.classList.toggle("open");
+  $("btn-settings-fold").textContent = open ? "Hide" : "Show";
+}
+
+/* ---------------- library ---------------- */
+let libLoading = false;
+let libQuery = "";
+function fmtDate(epoch) {
+  if (!epoch) return "";
+  const d = new Date(epoch * 1000);
+  return d.toISOString ? d.toISOString().slice(0, 10) : String(epoch);
+}
+function fmtBytes(n) {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)} ${u[i]}`;
+}
+async function refreshLibrary() {
+  if (libLoading) return;
+  libLoading = true;
+  libQuery = $("lib-search").value.trim();
+  try {
+    const res = await fetch("/api/library" + (libQuery ? "?q=" + encodeURIComponent(libQuery) : ""));
+    const data = await res.json();
+    if (!data.ok) { renderLibraryError(data.error || "Could not scan library."); return; }
+    renderLibrary(data);
+  } catch (e) {
+    renderLibraryError("Network error: " + e.message);
+  } finally {
+    libLoading = false;
+  }
+}
+function renderLibraryError(msg) {
+  $("lib-total").textContent = "—";
+  $("lib-root").innerHTML = `<div class="lib-empty">${escapeHtml(msg)}</div>`;
+}
+function renderLibrary(d) {
+  const root = $("lib-root");
+  const total = d.total_tracks || 0;
+  const size = fmtBytes(d.total_bytes);
+  $("lib-total").textContent = `${total} track${total === 1 ? "" : "s"}${size ? " · " + size : ""}`;
+  const hint = $("lib-hint");
+  hint.style.display = (d.path && d.truncated) ? "block" : "none";
+  if (d.truncated) hint.textContent = `Showing the first ${d.artists.length} artists — the full library lives in ${d.path}.`;
+  let html = "";
+  if (d.playlists && d.playlists.length) {
+    html += `<div class="lib-group"><h3>Playlists</h3>` + d.playlists.map(p =>
+      `<div class="lib-playlist">
+        <span>${escapeHtml(p.name)}</span>
+        ${p.artist ? `<span class="muted-sm">${escapeHtml(p.artist)}</span>` : ""}
+        ${p.copied ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)">folder</span>` : `<span class="badge">.m3u</span>`}
+        <span class="cnt">${p.track_count} track${p.track_count === 1 ? "" : "s"}${p.size_bytes ? " · " + fmtBytes(p.size_bytes) : ""}</span>
+        <button class="link-btn" data-open="${encodeURIComponent(p.path)}">Finder</button>
+      </div>`
+    ).join("") + `</div>`;
+  }
+  if (!d.artists.length && !html) {
+    root.innerHTML = `<div class="lib-empty">${libQuery ? "No matches for that search." : "Nothing downloaded yet — your music will show up here."}<br>Downloads land in <code>${escapeHtml(d.path || "")}</code>.</div>`;
+    return;
+  }
+  // The artist/album list gets its own heading so it never reads as part of a
+  // panel above it (e.g. the Cleanup panel's 🗑 Trash strip, which lives in
+  // #lib-extra directly above this list).
+  if (d.artists.length) html += `<div class="lib-group"><h3>Artists &amp; albums</h3>`;
+  html += d.artists.map(a => {
+    const albums = (a.albums || []).map(al =>
+      `<div class="lib-album">
+        <button class="link-btn" data-play="${encodeURIComponent(al.path)}" title="Play album in the in-app player">▶</button>
+        <span>${escapeHtml(al.name)}</span>
+        ${al.quality ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)" title="Best audio quality found">${escapeHtml(al.quality)}</span>` : ""}
+        ${al.added ? `<span class="badge" title="Added to your library">📅 ${fmtDate(al.added)}</span>` : ""}
+        <span class="cnt">${al.track_count} · ${fmtBytes(al.size_bytes)}</span>
+        <button class="link-btn" data-edit="${encodeURIComponent(al.path)}" title="Edit track tags">✎</button>
+        <button class="link-btn" data-open="${encodeURIComponent(al.path)}">Finder</button>
+      </div>`
+    ).join("");
+    return `<details class="lib-artist">
+      <summary>${escapeHtml(a.name)} ${a.quality ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)">${escapeHtml(a.quality)}</span>` : ""}<span class="cnt">${a.track_count} track${a.track_count === 1 ? "" : "s"}${a.size_bytes ? " · " + fmtBytes(a.size_bytes) : ""}</span></summary>
+      <div class="lib-albums">${albums}</div>
+    </details>`;
+  }).join("");
+  if (d.artists.length) html += `</div>`;
+  root.innerHTML = html;
+  // Wire the Finder buttons (delegation: they're re-rendered on refresh).
+  root.querySelectorAll("[data-open]").forEach(btn => {
+    btn.addEventListener("click", () => openInFinder(decodeURIComponent(btn.dataset.open)));
+  });
+  // Wire the rename buttons.
+  root.querySelectorAll("[data-rename]").forEach(btn => {
+    btn.addEventListener("click", () => renameLibraryPath(decodeURIComponent(btn.dataset.rename)));
+  });
+  // Wire the play buttons (in-app player).
+  root.querySelectorAll("[data-play]").forEach(btn => {
+    btn.addEventListener("click", () => playAlbum(decodeURIComponent(btn.dataset.play)));
+  });
+  // Wire the tag-editor buttons.
+  root.querySelectorAll("[data-edit]").forEach(btn => {
+    btn.addEventListener("click", () => openTagEditor(decodeURIComponent(btn.dataset.edit)));
+  });
+}
+async function renameLibraryPath(path) {
+  const oldName = path.split("/").pop() || path;
+  const newName = prompt(`Rename folder\n\n${oldName}`, oldName);
+  if (!newName || newName === oldName) return;
+  try {
+    const res = await fetch("/api/library/rename", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, new_name: newName }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.message || "Could not rename.", "err"); return; }
+    toast("Renamed ✓", "ok");
+    refreshLibrary();
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  }
+}
+
+/* ---------------- library extras: releases / dupes / backup ---------------- */
+async function showNewReleases() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-releases");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Checking recent releases from your artists…</div>`;
+  try {
+    const res = await fetch("/api/new-releases");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not check releases.")}</div>`; return; }
+    if (!data.releases.length) {
+      box.innerHTML = `<div class="w-banner">No releases from your artists in the last 90 days. ✨</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="lib-group"><h3>✨ New releases from your artists (last 90 days)
+      <button class="btn ghost small" id="btn-lib-notify" style="float:right" title="Send this list to your notify URL (Settings)">🔔 Notify me</button></h3>` +
+      data.releases.map(r => {
+        const date = (r.release_date || "").slice(0, 10);
+        return `<div class="lib-playlist">
+          <span><b>${escapeHtml(r.name || "")}</b> <span class="muted-sm">${escapeHtml(r.artist || "")}</span></span>
+          <span class="cnt">${escapeHtml(date)}${r.track_count ? ` · ${r.track_count} tracks` : ""}</span>
+          <button class="link-btn" data-dl="${encodeURIComponent(r.url || "")}">Download</button>
+        </div>`;
+      }).join("") + `</div>`;
+    const notifyBtn = $("btn-lib-notify");
+    if (notifyBtn) notifyBtn.addEventListener("click", notifyReleases);
+    box.querySelectorAll("[data-dl]").forEach(b => b.addEventListener("click", () => {
+      const u = decodeURIComponent(b.dataset.dl);
+      if (!u) return;
+      $("urls").value = (($("urls").value.trim() ? $("urls").value.trim() + "\n" : "") + u);
+      $("urls").dispatchEvent(new Event("input"));
+      toast("Added to download list ✓", "ok");
+    }));
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function showDuplicates() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-dupes");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Scanning for duplicate files…</div>`;
+  try {
+    const res = await fetch("/api/library/duplicates");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not scan.")}</div>`; return; }
+    if (!data.groups.length) {
+      box.innerHTML = `<div class="w-banner ok">No duplicate files found. 🎉</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="lib-group"><h3>🔁 ${data.count} possible duplicate${data.count === 1 ? "" : "s"} (same name + size)</h3>` +
+      data.groups.map(g => `<div class="lib-playlist" style="flex-wrap:wrap">
+        <span><b>${escapeHtml(g.name)}</b> <span class="muted-sm">${fmtBytes(g.size)}</span></span>
+        <div style="flex:1;min-width:220px">${g.files.map(f =>
+          `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.path)}</span>
+            ${f.quality ? `<span class="badge">${escapeHtml(f.quality)}</span>` : ""}
+            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">Finder</button>
+          </div>`).join("")}</div>
+      </div>`).join("") + `</div>` +
+      `<div class="hint">Playlist copies are excluded. Keep the highest-quality one and delete the rest in Finder — this tool never deletes anything itself.</div>`;
+    box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function exportBackup() {
+  fetch("/api/library/export")
+    .then(r => {
+      if (!r.ok) throw new Error("export failed");
+      return r.blob();
+    })
+    .then(blob => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "music-high-res-backup.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      toast("Backup downloaded ✓", "ok");
+    })
+    .catch(e => toast("Could not export: " + e.message, "err"));
+}
+async function openInFinder(path) {
+  try {
+    const res = await fetch("/api/library/open", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    const data = await res.json();
+    if (!data.ok) toast(data.error || "Could not open in Finder.", "err");
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  }
+}
+
+/* ---------------- smart duplicates (audio fingerprint) ---------------- */
+async function showSmartDuplicates() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-smart-dupes");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Fingerprinting up to 300 files (first 15s each)… this can take a minute on big libraries.</div>`;
+  try {
+    const res = await fetch("/api/library/smart-duplicates");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not scan.")}</div>`; return; }
+    if (!data.groups.length) {
+      box.innerHTML = `<div class="w-banner ok">No same-song duplicates found by audio fingerprint. 🎉</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="lib-group"><h3>🎧 ${data.count} track${data.count === 1 ? "" : "s"} that sound identical (same song, different files)</h3>` +
+      data.groups.map(g => `<div class="lib-playlist" style="flex-wrap:wrap">
+        <span><b>${escapeHtml(g.name)}</b></span>
+        <div style="flex:1;min-width:220px">${g.files.map(f =>
+          `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</span>
+            ${f.quality ? `<span class="badge">${escapeHtml(f.quality)}</span>` : ""}
+            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">Finder</button>
+          </div>`).join("")}</div>
+      </div>`).join("") + `</div>` +
+      `<div class="hint">Matches by decoding the first 15s of audio (mono PCM hash), so ALAC vs FLAC or renamed files of the same master are caught. Lossy AAC won't match lossless of the same song — that's expected. Keep the best-quality copy and delete the rest in Finder; this tool never deletes.</div>`;
+    box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------------- format cleanup (FLAC vs ALAC) + trash ---------------- */
+async function showFormatDuplicates() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-cleanup");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Scanning albums for same-track files in multiple formats…</div>`;
+  try {
+    // Both calls in parallel: the duplicate groups + the universal-action counts
+    // (delete all FLAC / all ALAC / all but best — they apply library-wide,
+    // so they're shown even when no per-album duplicates exist yet).
+    const [dupesRes, cleanRes] = await Promise.all([
+      fetch("/api/library/format-duplicates"),
+      fetch("/api/library/cleanup"),
+    ]);
+    const data = await dupesRes.json();
+    const clean = await cleanRes.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not scan.")}</div>`; return; }
+
+    const acts = (clean.ok && clean.actions) ? clean.actions : { flac: { count: 0, bytes: 0 }, alac: { count: 0, bytes: 0 }, best: { count: 0, bytes: 0 } };
+    const universalBtn = (action, label) => {
+      const a = acts[action] || { count: 0, bytes: 0 };
+      return `<button class="btn ghost small" data-cleanup="${action}" ${a.count ? "" : "disabled"} title="${label} — whole library at once; files go to .trash (recoverable)">${label} · ${a.count} (${fmtBytes(a.bytes)})</button>`;
+    };
+    let html = `<div class="lib-group"><h3>🗑 Universal cleanup <span class="muted-sm" style="text-transform:none;letter-spacing:0">— whole library, one click</span></h3>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px">
+        ${universalBtn("flac", "Delete all FLAC")}
+        ${universalBtn("alac", "Delete all ALAC")}
+        ${universalBtn("best", "Delete all but best")}
+      </div>
+      <div class="hint" style="margin-top:6px">These act on your <b>entire library</b> at once, not just one album. Everything is <b>recoverable</b> — files move to <code>.trash/</code> and can be restored from the strip below. “Delete all but best” keeps the highest-quality copy of every duplicate pair and trashes the rest.</div></div>`;
+
+    if (!data.groups.length) {
+      html += `<div class="w-banner ok">No format duplicates found — every track exists in only one format. 🎉</div>`;
+    } else {
+      const totalBytes = data.groups.reduce((s, g) => s + g.files.slice(1).reduce((x, f) => x + (f.size || 0), 0), 0);
+      html += `<div class="lib-group"><h3>🧹 ${data.count} track${data.count === 1 ? "" : "s"} in more than one format (e.g. ALAC .m4a + FLAC)
+        <span class="muted-sm" style="text-transform:none;letter-spacing:0">— deleting the extras frees ~${fmtBytes(totalBytes)}</span></h3>` +
+        data.groups.map(g => `<div class="lib-playlist" style="flex-wrap:wrap;align-items:flex-start">
+          <span style="min-width:180px"><b>${escapeHtml(g.title)}</b><br><span class="muted-sm">${escapeHtml(g.artist)} — ${escapeHtml(g.album)}</span></span>
+          <div style="flex:1;min-width:240px">${g.files.map(f =>
+            `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span>
+              <span class="badge">${escapeHtml((f.codec || "").toUpperCase())} · ${fmtBytes(f.size)}</span>
+              ${f.keep ? `<span class="badge ok" title="Best copy — the tool recommends keeping this one">KEEP</span>` : ""}
+              <button class="link-btn danger" data-del="${encodeURIComponent(f.path)}">Delete</button>
+            </div>`).join("")}</div>
+          <button class="btn ghost small" data-delall="${g.files.filter(f => !f.keep).map(f => encodeURIComponent(f.path)).join(",")}" style="align-self:center">Delete all but best</button>
+        </div>`).join("") + `</div>` +
+        `<div class="hint">Deletes are <b>recoverable</b>: files move to <code>.trash/</code> in your music folder, and you can restore them from the strip below. The KEEP badge marks the highest-quality copy (lossless first, then FLAC &gt; ALAC).</div>`;
+    }
+    box.innerHTML = html;
+    box.querySelectorAll("[data-cleanup]").forEach(b => b.addEventListener("click", () => runUniversalCleanup(b.dataset.cleanup, acts[b.dataset.cleanup] || { count: 0, bytes: 0 })));
+    box.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => deleteLibraryFiles([decodeURIComponent(b.dataset.del)])));
+    box.querySelectorAll("[data-delall]").forEach(b => b.addEventListener("click", () => {
+      const paths = b.dataset.delall.split(",").map(decodeURIComponent).filter(Boolean);
+      deleteLibraryFiles(paths);
+    }));
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+  renderTrashStrip();
+}
+
+async function runUniversalCleanup(action, info) {
+  const labels = { flac: "all FLAC files", alac: "all ALAC files", best: "every non-best duplicate copy" };
+  const label = labels[action] || action;
+  const n = (info && info.count) || 0;
+  const size = (info && info.bytes) ? ` · ${fmtBytes(info.bytes)}` : "";
+  if (!confirm(`Move ${label}${n ? ` (${n} file${n === 1 ? "" : "s"}${size})` : ""} to trash?\n\nThis is recoverable — files go to .trash in your music folder.`)) return;
+  try {
+    const res = await fetch("/api/library/cleanup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not run cleanup.", "err"); return; }
+    toast(`Moved ${data.deleted} file${data.deleted === 1 ? "" : "s"} to trash (freed ${fmtBytes(data.bytes_freed)}) ✓`, "ok");
+    const failed = (data.results || []).filter(r => !r.ok);
+    if (failed.length) toast(`${failed.length} could not be moved: ${failed[0].message}`, "err");
+    if (data.truncated) toast(`⚠ ${data.truncated} more file${data.truncated === 1 ? "" : "s"} were skipped (batch limit) — re-run to continue.`, "err");
+    showFormatDuplicates();
+    refreshLibrary();
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  }
+}
+
+async function deleteLibraryFiles(paths) {
+  if (!paths.length) return;
+  const extra = paths.length === 1 ? `\n\n${paths[0]}` : `\n\n${paths.length} files`;
+  if (!confirm(`Move to trash (recoverable)?${extra}\n\nYou can restore them from .trash in your music folder.`)) return;
+  try {
+    const res = await fetch("/api/library/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not delete.", "err"); return; }
+    toast(`Moved ${data.deleted} file${data.deleted === 1 ? "" : "s"} to trash ✓`, "ok");
+    if (data.deleted < paths.length) {
+      const failed = (data.results || []).filter(r => !r.ok);
+      if (failed.length) toast(`Could not delete ${failed.length}: ${failed[0].message}`, "err");
+    }
+    showFormatDuplicates();
+    refreshLibrary();
+  } catch (e) {
+    toast("Network error: " + e.message, "err");
+  }
+}
+
+async function renderTrashStrip() {
+  const box = $("lib-extra");
+  try {
+    const res = await fetch("/api/library/trash");
+    const data = await res.json();
+    if (!data.ok) return;
+    let html = `<div class="lib-group" style="margin-top:16px"><h3>🗑 Trash — ${data.files} file${data.files === 1 ? "" : "s"} · ${fmtBytes(data.bytes)} (recoverable)
+      <button class="link-btn" style="text-transform:none;letter-spacing:0" data-open="${encodeURIComponent(data.path)}">Open in Finder</button></h3>`;
+    if (!data.files) {
+      html += `<div class="lib-empty" style="padding:10px 0">Nothing in trash.</div>`;
+    } else {
+      html += data.items.map(it =>
+        `<div class="lib-playlist" style="flex-wrap:wrap">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(it.path)}">${escapeHtml(it.name)} <span class="muted-sm">· ${fmtBytes(it.size)}</span></span>
+          <button class="link-btn" data-restore="${encodeURIComponent(it.name)}">Restore</button>
+        </div>`
+      ).join("");
+      html += `<div style="margin-top:8px"><button class="link-btn danger" id="btn-empty-trash">Empty trash (permanently deletes ${data.files} file${data.files === 1 ? "" : "s"})</button></div>`;
+    }
+    html += `<div class="hint" style="margin-top:6px">Trash lives in <code>.trash/</code> inside your music folder — drag anything back in Finder if you prefer.</div></div>`;
+    box.insertAdjacentHTML("beforeend", html);
+    box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
+    box.querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", async () => {
+      const res = await fetch("/api/library/trash/restore", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: decodeURIComponent(b.dataset.restore) }),
+      });
+      const d = await res.json();
+      toast(d.ok ? d.message : (d.error || "Could not restore."), d.ok ? "ok" : "err");
+      showFormatDuplicates();
+      refreshLibrary();
+    }));
+    const emptyBtn = box.querySelector("#btn-empty-trash");
+    if (emptyBtn) emptyBtn.addEventListener("click", async () => {
+      if (!confirm(`Permanently delete ${data.files} file(s) from trash?\n\nThis is the only irreversible action — it cannot be undone.`)) return;
+      const res = await fetch("/api/library/trash/empty", { method: "POST" });
+      const d = await res.json();
+      toast(d.ok ? d.message : (d.error || "Could not empty trash."), d.ok ? "ok" : "err");
+      showFormatDuplicates();
+      refreshLibrary();
+    });
+  } catch (e) {
+    /* non-fatal — the strip is a convenience */
+  }
+}
+
+/* ---------------- stats dashboard ---------------- */
+async function showStats() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-stats");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Crunching the numbers…</div>`;
+  try {
+    const res = await fetch("/api/stats");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not load stats.")}</div>`; return; }
+    const split = Object.entries(data.codec_split || {}).map(([c, n]) => {
+      const total = Object.values(data.codec_split || {}).reduce((a, b) => a + b, 0) || 1;
+      const pct = Math.round((n / total) * 100);
+      return `<div class="stat-bar-row"><span class="lbl">${escapeHtml(c)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${pct}%"></span></span><span class="n">${n}</span></div>`;
+    }).join("");
+    const top = (data.top_artists || []).map(a =>
+      `<div class="stat-bar-row"><span class="lbl">${escapeHtml(a.name)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.min(100, Math.round((a.tracks / (data.top_artists[0]?.tracks || 1)) * 100))}%"></span></span><span class="n">${a.tracks}</span></div>`
+    ).join("");
+    box.innerHTML = `<div class="stats-grid">
+      <div class="stat-card"><div class="v">${data.tracks || 0}</div><div class="k">tracks</div></div>
+      <div class="stat-card"><div class="v">${fmtBytes(data.bytes)}</div><div class="k">total size</div></div>
+      <div class="stat-card"><div class="v">${data.albums || 0}</div><div class="k">albums</div></div>
+      <div class="stat-card"><div class="v">${data.artists || 0}</div><div class="k">artists</div></div>
+      <div class="stat-card"><div class="v">${data.playlists || 0}</div><div class="k">playlists</div></div>
+    </div>` +
+      (split ? `<div class="lib-group"><h3>Codec split (by album)</h3><div class="stat-bars">${split}</div></div>` : "") +
+      (top ? `<div class="lib-group"><h3>Top artists by tracks</h3><div class="stat-bars">${top}</div></div>` : "");
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------------- SQLite ledger ---------------- */
+async function showLedger() {
+  const box = $("lib-extra");
+  const btn = $("btn-lib-ledger");
+  btn.disabled = true;
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Reading the SQLite ledger…</div>`;
+  try {
+    const res = await fetch("/api/library/ledger");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not read the ledger.")}</div>`; return; }
+    const engineRows = Object.entries(data.by_engine || {}).map(([e, n]) =>
+      `<div class="stat-bar-row"><span class="lbl">${escapeHtml(e)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.round((n / (data.tracks || 1)) * 100)}%"></span></span><span class="n">${n}</span></div>`
+    ).join("");
+    const codecRows = Object.entries(data.by_codec || {}).map(([c, n]) =>
+      `<div class="stat-bar-row"><span class="lbl">${escapeHtml(c)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.round((n / (data.tracks || 1)) * 100)}%"></span></span><span class="n">${n}</span></div>`
+    ).join("");
+    const missing = (data.missing || []).map(p =>
+      `<div class="lib-playlist"><span style="word-break:break-all">${escapeHtml(p)}</span></div>`
+    ).join("");
+    box.innerHTML = `<div class="stats-grid">
+        <div class="stat-card"><div class="v">${data.tracks || 0}</div><div class="k">indexed tracks</div></div>
+        <div class="stat-card"><div class="v">${fmtBytes(data.bytes)}</div><div class="k">indexed size</div></div>
+        <div class="stat-card"><div class="v">${data.missing_count || 0}</div><div class="k">missing on disk</div></div>
+      </div>
+      <div class="lib-group"><h3>By engine</h3><div class="stat-bars">${engineRows || `<div class="hint">Nothing indexed yet.</div>`}</div></div>
+      <div class="lib-group"><h3>By codec</h3><div class="stat-bars">${codecRows || `<div class="hint">Nothing indexed yet.</div>`}</div></div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn ghost small" id="btn-lib-ledger-rebuild">🔄 Rebuild from disk</button>
+      </div>
+      <div class="hint" style="margin-top:10px">Every completed download is recorded in <code>data/library.sqlite</code> — the <b>✓ owned</b> chips read it for exact "do I already have this?" answers. <b>Missing on disk</b> = files the ledger recorded that no longer exist (deleted or sitting in <code>.trash</code>).</div>
+      ${data.missing_count ? `<div class="lib-group" style="margin-top:12px"><h3>Missing files (${data.missing_count}${data.missing_count > data.missing.length ? `, showing ${data.missing.length}` : ""})</h3>${missing}</div>` : ""}`;
+    const rb = $("btn-lib-ledger-rebuild");
+    if (rb) rb.addEventListener("click", rebuildLedger);
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function rebuildLedger() {
+  const box = $("lib-extra");
+  box.innerHTML = `<div class="lib-empty">Rebuilding the ledger from your music folder…</div>`;
+  try {
+    const res = await fetch("/api/library/ledger/rebuild", { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Rebuild failed.")}</div>`; return; }
+    toast(`Ledger rebuilt — ${data.tracks} tracks indexed ✓`, "ok");
+    showLedger();
+  } catch (e) {
+    box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+/* ---------------- library.xml import ---------------- */
+let importState = { tracks: [] };
+async function showImportPanel() {
+  const box = $("lib-extra");
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-group"><h3>📥 Import Apple Music / iTunes library.xml</h3>
+    <div class="row" style="margin-top:0">
+      <div class="field" style="flex:1;min-width:240px">
+        <label>Path to library.xml (File → Library → Export Library)</label>
+        <input type="text" id="f-libxml" placeholder="/Users/you/Music/iTunes/iTunes Music Library.xml">
+      </div>
+      <div class="field" style="flex:1;min-width:200px">
+        <label>Playlist (optional — empty = whole library)</label>
+        <input type="text" id="f-libxml-playlist" placeholder="e.g. Chill Mix">
+      </div>
+      <div class="field" style="max-width:110px">
+        <label>Track cap</label>
+        <input type="number" id="f-libxml-limit" value="150" min="1" max="1000" step="50">
+      </div>
+      <button class="btn ghost small" id="btn-libxml-preview" style="align-self:flex-end">Preview</button>
+      <button class="btn small" id="btn-libxml-go" style="align-self:flex-end;display:none">⬇ Download matched</button>
+    </div>
+    <div id="libxml-result" style="margin-top:10px"></div>
+    <div class="hint">Tracks are matched against the Apple Music catalog (iTunes Search API, same as the Migrate panel) — matched ones are ready to download as one batch.</div>
+  </div>`;
+  $("btn-libxml-preview").addEventListener("click", async () => {
+    const path = $("f-libxml").value.trim();
+    const playlist = $("f-libxml-playlist").value.trim();
+    const limit = parseInt($("f-libxml-limit").value, 10) || 150;
+    if (!path) { toast("Give the path to your library.xml.", "err"); return; }
+    const resBox = $("libxml-result");
+    resBox.innerHTML = `<div class="lib-empty">Reading + matching tracks…</div>`;
+    try {
+      const res = await fetch("/api/library/import", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, playlist, limit }),
+      });
+      const data = await res.json();
+      if (!data.ok) { resBox.innerHTML = `<div class="w-banner err">${escapeHtml(data.error || "Import failed.")}</div>`; return; }
+      importState.tracks = data.tracks || [];
+      const ok = data.matched || 0;
+      resBox.innerHTML = `<div class="w-banner ${ok === data.total && data.total > 0 ? "ok" : ok > 0 ? "warn" : "err"}">
+        <b>${escapeHtml(data.title)}</b> — ${data.total} tracks, ${ok} matched on Apple Music.
+        ${data.unmatched > 0 ? " Unmatched ones are skipped." : ""}
+        ${data.truncated ? `<br><span class="muted-sm">Capped at ${data.total} tracks — raise the Track cap to import more.</span>` : ""}
+      </div>` +
+        `<div class="mig-table" style="max-height:260px">${(data.tracks || []).map((t, i) => {
+          const m = t.match;
+          return `<div class="mig-row" style="cursor:default">
+            <span class="mig-idx">${i + 1}</span>
+            <span class="mig-t"><b>${escapeHtml(t.title)}</b><br><span class="muted-sm">${escapeHtml(t.artist || "—")}${t.album ? " · " + escapeHtml(t.album) : ""}</span></span>
+            ${m ? `<span class="badge" style="color:var(--ok);border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.1)">→ ${escapeHtml(m.apple_artist)} — ${escapeHtml(m.apple_name)}</span>` : `<span class="badge">no match</span>`}
+          </div>`;
+        }).join("")}</div>`;
+      $("btn-libxml-go").style.display = ok > 0 ? "block" : "none";
+      $("btn-libxml-go").onclick = () => downloadImportMatches();
+      toast(`Imported ${data.total} tracks, ${ok} matched ✓`, ok ? "ok" : "err");
+    } catch (e) {
+      resBox.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+    }
+  });
+}
+
+async function downloadImportMatches() {
+  const urls = importState.tracks.filter(t => t.match && t.match.apple_url).map(t => t.match.apple_url);
+  if (!urls.length) { toast("No matched tracks to download.", "err"); return; }
+  try {
+    const res = await fetch("/api/download", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls, codec: currentCodec() }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not start downloads.", "err"); return; }
+    toast(`Queued ${data.job.url_count} downloads ✓`, "ok");
+    state.expanded.add(data.job.id);
+    await refreshJobs();
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+}
+
+/* ---------------- tag editor modal ---------------- */
+async function openTagEditor(albumPath) {
+  try {
+    const res = await fetch("/api/library/album?path=" + encodeURIComponent(albumPath));
+    const data = await res.json();
+    if (!data.ok || !data.tracks.length) { toast(data.error || "No tracks in that album.", "err"); return; }
+    const tracks = data.tracks;
+    const back = document.createElement("div");
+    back.className = "modal-back";
+    back.innerHTML = `<div class="modal">
+      <h3>✎ Edit tags</h3>
+      <div class="muted-sm">Select a track, edit its tags, save. Empty = leave unchanged.</div>
+      <select id="tag-track" style="width:100%;background:rgba(0,0,0,.35);color:var(--text);border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;font-family:var(--mono);outline:none;margin-bottom:14px">
+        ${tracks.map((t, i) => `<option value="${i}">${escapeHtml(t.track ? t.track + " — " : "")}${escapeHtml(t.title)}${t.added ? `  (📅 ${fmtDate(t.added)})` : ""}</option>`).join("")}
+      </select>
+      ${["tag-title", "tag-artist", "tag-album", "tag-albumartist", "tag-tracknum", "tag-date"].map(id =>
+        `<div class="field" style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1"><label>${escapeHtml({ "tag-title": "Title", "tag-artist": "Artist", "tag-album": "Album", "tag-albumartist": "Album artist", "tag-tracknum": "Track #", "tag-date": "Year" }[id])}</label>
+          <input type="text" id="${id}" placeholder="—"></div>
+          <button class="link-btn" data-clear="${id}" title="Clear this tag">✕</button>
+        </div>`).join("")}
+      <div class="modal-actions">
+        <button class="btn ghost small" id="tag-cancel">Cancel</button>
+        <button class="btn small" id="tag-save">Save to file</button>
+      </div>
+    </div>`;
+    document.body.appendChild(back);
+    const select = $("tag-track");
+    const fill = () => {
+      const t = tracks[parseInt(select.value, 10)];
+      $("tag-title").value = t.title === t.name ? "" : (t.title || "");
+      $("tag-artist").value = t.artist || "";
+      $("tag-album").value = ""; $("tag-albumartist").value = ""; $("tag-tracknum").value = t.track || ""; $("tag-date").value = "";
+    };
+    select.addEventListener("change", fill);
+    fill();
+    back.querySelectorAll("[data-clear]").forEach(b => b.addEventListener("click", () => {
+      $(b.dataset.clear).value = "";
+      $(b.dataset.clear).dataset.cleared = "1";
+    }));
+    $("tag-cancel").addEventListener("click", () => back.remove());
+    back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+    $("tag-save").addEventListener("click", async () => {
+      const t = tracks[parseInt(select.value, 10)];
+      const body = { path: t.path };
+      for (const [id, key] of [["tag-title", "title"], ["tag-artist", "artist"], ["tag-album", "album"], ["tag-albumartist", "albumartist"], ["tag-tracknum", "track"], ["tag-date", "date"]]) {
+        const el = $(id);
+        const v = el.value.trim();
+        if (el.dataset.cleared) body[key] = "";      // empty string → delete the tag
+        else if (v) body[key] = v;
+      }
+      try {
+        const res = await fetch("/api/tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const data = await res.json();
+        toast(data.ok ? (data.message || "Tags updated ✓") : (data.error || data.message || "Could not save tags."), data.ok ? "ok" : "err");
+        if (data.ok) { back.remove(); refreshLibrary(); }
+      } catch (e) { toast("Network error: " + e.message, "err"); }
+    });
+  } catch (e) {
+    toast("Could not open tag editor: " + e.message, "err");
+  }
+}
+
+/* ---------------- notify releases ---------------- */
+async function notifyReleases() {
+  const btn = $("btn-lib-notify");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/notify/releases", { method: "POST" });
+    const data = await res.json();
+    toast(data.ok ? `Sent ${data.sent} release(s) to your notify URL ✓` : (data.error || "Could not notify."), data.ok ? "ok" : "err");
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { if (btn) btn.disabled = false; }
+}
+
 function currentCodec() {
   const btn = document.querySelector("#codec-seg button.active");
   return btn ? btn.dataset.codec : "alac,aac-web";
 }
+/* ---------------- URL preview chips ---------------- */
+let previewSeq = 0;
+let previewTimer = null;
+// URL → {owned, total} learned by the chips; the Download button reuses it so
+// "skip already-downloaded" doesn't re-fetch every link (and risk Apple 429s).
+const urlOwnedCache = new Map();
+
+async function previewUrls() {
+  const box = $("url-preview");
+  const raw = $("urls").value.trim();
+  const urls = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  // Always start from a clean slate — a previous run's chips must not linger.
+  box.replaceChildren();
+  if (!urls.length) return;
+
+  const seq = ++previewSeq;
+  // Preview at most 6 links (Apple page fetches) — enough to sanity-check a batch.
+  const targets = urls.slice(0, 6);
+  const chips = targets.map((u, i) => {
+    const chip = document.createElement("span");
+    chip.className = "url-chip dim";
+    chip.innerHTML = `<span class="pulse"></span>${escapeHtml(fmtUrl(u))}`;
+    box.appendChild(chip);
+    return { chip, url: u };
+  });
+  const more = urls.length > targets.length
+    ? `<span class="url-chip dim">+${urls.length - targets.length} more</span>`
+    : "";
+
+  await Promise.all(chips.map(async ({ chip, url }) => {
+    try {
+      const res = await fetch("/api/url-preview?url=" + encodeURIComponent(url));
+      const data = await res.json();
+      if (seq !== previewSeq) return; // stale — user typed again
+      if (!data.ok) { chip.className = "url-chip err"; chip.textContent = "⚠ " + (data.error || "?"); return; }
+      urlOwnedCache.set(url, data.owned || null);
+      const kind = data.kind || "link";
+      let label = kind === "song" ? "song" : kind === "video" ? "video" : kind === "artist" ? "artist" : kind;
+      if (kind === "library") {
+        const lk = data.library_kind || "library";
+        label = lk === "songs" ? "library · songs" : lk === "albums" ? "library · albums" : lk === "music-videos" ? "library · videos" : "library · playlists";
+      }
+      let mid = "";
+      if (data.track_count != null) mid = ` · <span class="n">${data.track_count} track${data.track_count === 1 ? "" : "s"}</span>`;
+      const title = data.title ? ` · ${escapeHtml(data.title)}` : "";
+      // Ownership hint: how many of the item's tracks already exist locally.
+      let own = "";
+      const o = data.owned;
+      if (o && o.total && o.owned > 0) {
+        const full = o.owned >= o.total;
+        own = ` · <span class="n" style="color:${full ? "var(--ok)" : "var(--warn)"}">${full ? "✓ owned " : ""}${o.owned}/${o.total}</span>`;
+        if (full) chip.title = "Already downloaded — re-downloading skips existing files (or enable Overwrite)";
+      }
+      chip.className = "url-chip";
+      chip.innerHTML = `${kind === "library" ? "📚" : "🎵"} ${escapeHtml(label)}${mid}${own}${title}`;
+      // 30-second preview button (iTunes previewUrl) — Apple links only;
+      // Spotify/YouTube previews come back with a "source" field instead.
+      if ((!data.source || data.source === "apple") && (kind === "song" || kind === "album" || kind === "video")) {
+        const play = document.createElement("button");
+        play.type = "button";
+        play.title = "Play 30s preview";
+        play.textContent = "▶";
+        play.style.cssText = "background:none;border:0;color:var(--accent-2);cursor:pointer;font-size:11px;padding:0 2px;margin-left:2px;transition:color .15s ease";
+        play.onmouseenter = () => { play.style.color = "#fff"; };
+        play.onmouseleave = () => { play.style.color = "var(--accent-2)"; };
+        play.onclick = async (ev) => {
+          ev.stopPropagation();
+          if (play.dataset.loading) return;
+          play.dataset.loading = "1";
+          play.textContent = "…";
+          try {
+            const r = await fetch("/api/preview-url?url=" + encodeURIComponent(url));
+            const d = await r.json();
+            if (!d.ok) { toast(d.error || "No preview available.", "err"); return; }
+            playPreview(d.preview_url, play);
+          } catch (e) {
+            toast("Network error: " + e.message, "err");
+          } finally {
+            delete play.dataset.loading;
+          }
+        };
+        chip.appendChild(play);
+      }
+    } catch (e) {
+      if (seq === previewSeq) { chip.className = "url-chip err"; chip.textContent = "⚠ preview failed"; }
+    }
+  }));
+
+  if (seq === previewSeq && more) {
+    const el = document.createElement("span");
+    el.className = "url-chip dim";
+    el.innerHTML = `+${urls.length - targets.length} more`;
+    box.appendChild(el);
+  }
+}
+
+function scheduleUrlPreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(previewUrls, 450);
+}
+
+/* ---------------- 30s preview playback ---------------- */
+let previewAudio = null;
+function playPreview(url, btn) {
+  try {
+    if (previewAudio) { previewAudio.pause(); previewAudio = null; }
+    const audio = new Audio(url);
+    previewAudio = audio;
+    btn.textContent = "■";
+    audio.onended = () => { btn.textContent = "▶"; };
+    audio.onerror = () => { btn.textContent = "▶"; toast("Preview failed to load.", "err"); };
+    audio.play().catch(() => { btn.textContent = "▶"; });
+  } catch (e) {
+    toast("Could not play preview: " + e.message, "err");
+  }
+}
+
+/* ---------------- clipboard suggest ---------------- */
+async function suggestClipboard() {
+  const box = $("urls");
+  const existing = $("clip-suggest");
+  if (box.value.trim() || existing || !navigator.clipboard || !navigator.clipboard.readText) return;
+  try {
+    const text = (await navigator.clipboard.readText() || "").trim();
+    if (!text || !/music\.apple\.com\/.+\/(song|album|playlist|artist|music-video|library)/.test(text)) return;
+    const pill = document.createElement("button");
+    pill.id = "clip-suggest";
+    pill.type = "button";
+    pill.className = "url-chip";
+    pill.style.cursor = "pointer";
+    pill.innerHTML = `📋 <span style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom">${escapeHtml(text.slice(0, 80))}…</span>`;
+    pill.onclick = () => { box.value = text; box.dispatchEvent(new Event("input")); pill.remove(); box.focus(); };
+    $("url-preview").appendChild(pill);
+  } catch (e) { /* clipboard denied — fine, silently skip */ }
+}
+
 async function download() {
   const raw = $("urls").value.trim();
   if (!raw) { toast("Paste at least one Apple Music URL first.", "err"); $("urls").focus(); return; }
-  const urls = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  ensureNotifPerm();
+  let urls = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+
+  // When "Skip already-downloaded" is on, drop fully-owned links before queuing.
+  // Reuses the chips' cached ownership; only unknown URLs are fetched, and in
+  // small batches so a big paste can't hammer Apple's pages (429 risk).
+  if (state.config && state.config.skip_owned) {
+    try {
+      const known = [];
+      const unknown = [];
+      urls.forEach(u => {
+        const o = urlOwnedCache.get(u);
+        if (o && o.total) known.push({ u, keep: o.owned < o.total });
+        else unknown.push(u);
+      });
+      const batch = 4;
+      for (let i = 0; i < unknown.length; i += batch) {
+        const chunk = unknown.slice(i, i + batch);
+        const results = await Promise.all(chunk.map(async u => {
+          try {
+            const r = await fetch("/api/url-preview?url=" + encodeURIComponent(u));
+            const d = await r.json();
+            const o = d.ok ? (d.owned || null) : null;
+            if (o) urlOwnedCache.set(u, o);
+            if (!o || !o.total) return { u, keep: true };
+            return { u, keep: o.owned < o.total };
+          } catch (e) {
+            return { u, keep: true };
+          }
+        }));
+        known.push(...results);
+      }
+      const skipped = known.filter(r => !r.keep);
+      urls = known.filter(r => r.keep).map(r => r.u);
+      if (skipped.length) toast(`Skipped ${skipped.length} link${skipped.length === 1 ? "" : "s"} you already own ✓`, "ok");
+      if (!urls.length) return;
+    } catch (e) {
+      // Preview hiccup — proceed with everything, never block a download on this.
+    }
+  }
 
   const btn = $("btn-download");
   btn.disabled = true;
@@ -761,11 +2770,17 @@ async function download() {
     const res = await fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls, codec: currentCodec() }),
+      body: JSON.stringify({ urls, codec: currentCodec(), delta: state.config && !!state.config.delta_sync }),
     });
     const data = await res.json();
     if (!data.ok) { toast(data.error || "Download failed to start.", "err"); return; }
-    toast(`Queued ${data.job.url_count} link${data.job.url_count > 1 ? "s" : ""} ✓`, "ok");
+    if (!data.job) {
+      toast(data.message || "Nothing to download — everything's already in your library ✓", "ok");
+      return;
+    }
+    let msg = `Queued ${data.job.url_count} link${data.job.url_count > 1 ? "s" : ""} ✓`;
+    if (data.delta_skipped) msg += ` (delta: ${data.delta_skipped} already-owned track${data.delta_skipped === 1 ? "" : "s"} skipped)`;
+    toast(msg, "ok");
     state.expanded.add(data.job.id);
     await refreshJobs();
   } catch (e) {
@@ -776,6 +2791,212 @@ async function download() {
   }
 }
 
+/* ---------------- segmented control thumb ---------------- */
+function segThumb(seg) {
+  if (!seg) return;
+  let thumb = seg.querySelector(".seg-thumb");
+  if (!thumb) {
+    thumb = document.createElement("div");
+    thumb.className = "seg-thumb";
+    seg.prepend(thumb);
+  }
+  const btn = seg.querySelector("button.active");
+  if (!btn) return;
+  // left/width for the column, top/height so a wrapped button (narrow screens)
+  // still gets the thumb on its own row.
+  thumb.style.left = btn.offsetLeft + "px";
+  thumb.style.width = btn.offsetWidth + "px";
+  thumb.style.top = (btn.offsetTop + 4) + "px";
+  thumb.style.height = btn.offsetHeight + "px";
+  thumb.style.bottom = "auto";
+}
+function segThumbs() {
+  document.querySelectorAll(".seg[data-thumb]").forEach(segThumb);
+}
+
+/* ---------------- system logs ---------------- */
+let syslogFile = "app";
+async function refreshSyslog() {
+  const box = $("syslog");
+  if (!box) return;
+  try {
+    const res = await fetch(`/api/logs?file=${syslogFile}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    // Only stick to the bottom if the user is already there — don't yank the
+    // scroll position away while they're reading older lines.
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = data.lines.length
+      ? data.lines.map(l => {
+          const cls = /(ERROR|CRITICAL)/.test(l) ? "lvl-ERROR" : /WARNING/.test(l) ? "lvl-WARNING" : "";
+          return `<div class="${cls}">${escapeHtml(l)}</div>`;
+        }).join("")
+      : "<div>— log is empty —</div>";
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+  } catch (e) { /* app just starting / offline — keep last view */ }
+}
+
+/* ---------------- notifications ---------------- */
+let audioCtx = null;
+function ensureNotifPerm() {
+  if ("Notification" in window && Notification.permission === "default") {
+    try {
+      const req = Notification.requestPermission();
+      if (req && typeof req.catch === "function") req.catch(() => {});
+    } catch (e) {}
+  }
+}
+function playChime(failed) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") {
+      try {
+        const r = audioCtx.resume();
+        if (r && typeof r.catch === "function") r.catch(() => {});
+      } catch (e) {}
+    }
+    const t = audioCtx.currentTime;
+    const notes = failed ? [329.63, 246.94] : [523.25, 659.25, 783.99];
+    notes.forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, t + i * 0.13);
+      g.gain.linearRampToValueAtTime(0.12, t + i * 0.13 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.13 + 0.55);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t + i * 0.13); o.stop(t + i * 0.13 + 0.6);
+    });
+  } catch (e) { /* audio unavailable — fine */ }
+}
+function notifyBatch(total, failed) {
+  const done = total - failed;
+  const body = failed > 0
+    ? `${done} finished, ${failed} failed/cancelled`
+    : `${done} download${done === 1 ? "" : "s"} finished ✓`;
+  toast(body, failed > 0 ? "err" : "ok");
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification("Music High Res", {
+        body: failed > 0 ? `Finished with ${failed} issue${failed === 1 ? "" : "s"} — ${body}` : `All downloads complete — ${body}`,
+        silent: true,
+      });
+    } catch (e) {}
+  }
+  playChime(failed > 0);
+}
+
+/* ---------------- wrapper setup wizard ---------------- */
+async function refreshSetupStatus() {
+  try {
+    const res = await fetch("/api/wrapper/setup");
+    const d = await res.json();
+    if (!d.ok) return;
+    const prev = setupState.state;
+    setupState = d;
+    if (prev === "running" && d.state === "done") toast("Wrapper setup complete ✓ — log in above to start ALAC downloads.", "ok");
+    if (prev === "running" && d.state === "failed") toast("Wrapper setup failed — check the log below.", "err");
+    renderSetupPanel();
+  } catch (e) { /* server offline — keep last state */ }
+}
+
+function renderSetupPanel() {
+  const panel = $("w-setup");
+  if (!panel || panel.style.display === "none") return;
+
+  const d = setupState.docker || {};
+  const dockerBadge = $("w-setup-docker");
+  if (!d.installed) {
+    dockerBadge.textContent = "Docker: not installed";
+    dockerBadge.className = "badge bad";
+  } else if (d.running) {
+    dockerBadge.textContent = "Docker: running ✓";
+    dockerBadge.className = "badge ok";
+  } else {
+    dockerBadge.textContent = "Docker: installed, not running";
+    dockerBadge.className = "badge warn";
+  }
+
+  const archBadge = $("w-setup-arch");
+  archBadge.textContent = (setupState.machine && setupState.machine.apple_silicon) ? "Apple Silicon" : "Intel Mac";
+  archBadge.className = "badge";
+
+  const presentBadge = $("w-setup-present");
+  presentBadge.textContent = setupState.wrapper_present ? "wrapper: set up" : "wrapper: not set up yet";
+  presentBadge.className = "badge" + (setupState.wrapper_present ? " ok" : " warn");
+
+  const running = setupState.state === "running";
+  const startBtn = $("btn-w-setup-start");
+  startBtn.disabled = running;
+  startBtn.textContent = running ? "Setting up…" : "Start setup";
+  $("w-setup-apk").disabled = running;
+  $("w-setup-email").disabled = running;
+  $("w-setup-pass").disabled = running;
+  $("w-setup-fix").disabled = running;
+
+  const step = $("w-setup-step");
+  if (running) step.textContent = setupState.step || "Working…";
+  else if (setupState.state === "done") step.textContent = "✓ Setup complete — the login panel above is ready.";
+  else if (setupState.state === "failed") step.textContent = "✗ Setup failed — see the log below.";
+  else step.textContent = "";
+
+  const logBox = $("w-setup-log");
+  if (setupState.log && setupState.log.length) {
+    logBox.style.display = "block";
+    logBox.innerHTML = setupState.log.map(l => `<div>${escapeHtml(l)}</div>`).join("");
+    logBox.scrollTop = logBox.scrollHeight;
+  } else {
+    logBox.style.display = "none";
+  }
+}
+
+async function startWrapperSetup() {
+  const apk = $("w-setup-apk").value.trim();
+  if (!apk) { toast("Enter the Apple Music APK path or URL first.", "err"); $("w-setup-apk").focus(); return; }
+  const btn = $("btn-w-setup-start");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/wrapper/setup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apk,
+        email: $("w-setup-email").value.trim(),
+        password: $("w-setup-pass").value,
+        apply_fix: $("w-setup-fix").checked,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Could not start setup.", "err"); btn.disabled = false; return; }
+    $("w-setup-log").style.display = "block";
+    $("w-setup-log").innerHTML = "<div>Starting…</div>";
+    refreshSetupStatus();
+  } catch (e) { toast("Network error: " + e.message, "err"); btn.disabled = false; }
+}
+
+async function loginWrapper() {
+  const email = $("w-login-email").value.trim();
+  const pass = $("w-login-pass").value;
+  if (!email || !pass) { toast("Enter your Apple ID email and password.", "err"); return; }
+  const btn = $("w-login-btn");
+  btn.disabled = true;
+  btn.textContent = "Logging in…";
+  try {
+    const res = await fetch("/api/wrapper/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || "Login failed to start.", "err"); }
+    else {
+      toast("Credentials saved — the wrapper is logging in…", "ok");
+      $("w-login-pass").value = "";
+    }
+    setTimeout(() => { refreshWrapper(); refreshSetupStatus(); }, 2500);
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "Log in to Apple Music"; }
+}
+
 /* ---------------- boot ---------------- */
 async function refreshStatus() {
   const res = await fetch("/api/status");
@@ -784,12 +3005,55 @@ async function refreshStatus() {
 }
 
 /* ---------------- wrapper / login panel ---------------- */
+let lastAmdl = "";
+async function renderAmdlWrapper(data) {
+  const pill = $("w-pill");
+  $("amdl-panel").style.display = "block";
+  $("w-setup-toggle-row").style.display = "none";
+  $("w-actions").style.display = "none";
+  $("w-login-hint").innerHTML = "Stored in <code>wrapper-amdl/.env</code> on this Mac only — never leaves it.";
+
+  pill.textContent = "amdl · " + data.state;
+  pill.className = "badge" + (data.state === "running" ? " lossless" : "");
+  const banner = $("amdl-banner");
+  banner.textContent = data.hint || "";
+  banner.className = "w-banner " +
+    (data.state === "running" ? "ok" :
+     data.state === "no_docker" ? "err" :
+     data.state === "conflict" ? "warn" :
+     data.needs_2fa ? "warn" : "");
+
+  $("w-auth").textContent = "state: " + data.state + (data.session_present ? " · session ✓" : "");
+  $("w-play").textContent = "wrapper-v2: " + (data.wrapper_v2_running ? "running (port conflict)" : "stopped");
+
+  $("w-code-row").style.display = data.needs_2fa ? "flex" : "none";
+  $("w-login").style.display =
+    (!data.wrapper_running && !data.login_running && !data.needs_2fa && !data.session_present) ? "grid" : "none";
+
+  const log = $("w-log");
+  log.innerHTML = (data.logs || []).map(l => `<div>${escapeHtml(l)}</div>`).join("") || "<div>— no logs —</div>";
+  log.scrollTop = log.scrollHeight;
+
+  if (data.needs_2fa && lastAmdl !== "2fa") {
+    setTimeout(() => {
+      const c = $("w-code");
+      if (c && document.activeElement !== c) c.focus();
+    }, 120);
+  }
+  lastAmdl = data.needs_2fa ? "2fa" : data.state;
+}
+
 async function refreshWrapper() {
   let data;
   try {
     const res = await fetch("/api/wrapper");
     data = await res.json();
   } catch (e) { return; }
+  if (data.mode === "amdl") {
+    renderAmdlWrapper(data);
+    if (data.state !== lastAmdl) { lastAmdl = data.state; refreshOnboarding(); }
+    return;
+  }
 
   const pill = $("w-pill");
   const banner = $("w-banner");
@@ -800,7 +3064,9 @@ async function refreshWrapper() {
     banner.textContent = "⚠ The wrapper isn't reachable — make sure Docker Desktop is running and the wrapper container is up (docker compose up).";
     banner.className = "w-banner err";
     $("w-code-row").style.display = "none";
+    $("w-login").style.display = "none";
     $("w-log").innerHTML = "<div>— no logs —</div>";
+    lastAuth = "offline";
     return;
   }
 
@@ -808,6 +3074,7 @@ async function refreshWrapper() {
   pill.className = "badge lossless";
 
   const auth = data.auth_state;
+  if (auth !== lastAuth) { lastAuth = auth; refreshOnboarding(); }
   const authBadge = $("w-auth");
   authBadge.textContent = "auth: " + auth + (data.apple_id ? " · " + data.apple_id : "");
   authBadge.className = "badge" + (auth === "authenticated" ? "" : " lossless");
@@ -834,13 +3101,31 @@ async function refreshWrapper() {
   const log = $("w-log");
   log.innerHTML = (data.logs || []).map(l => `<div>${escapeHtml(l)}</div>`).join("") || "<div>no log lines</div>";
   log.scrollTop = log.scrollHeight;
+
+  // Credentials form: shown whenever the wrapper is reachable and we still
+  // need to sign in (not authenticated, not waiting for a code, and not in
+  // the rejected-code state where the OTP box is the way forward).
+  $("w-login").style.display =
+    (auth !== "authenticated" && auth !== "awaiting_2fa" && auth !== "failed") ? "grid" : "none";
+
+  // Auto-focus the OTP box the moment the wrapper asks for a code.
+  if (auth === "awaiting_2fa" && lastAuth !== "awaiting_2fa") {
+    setTimeout(() => {
+      const c = $("w-code");
+      if (c && document.activeElement !== c) c.focus();
+    }, 120);
+  }
+  lastAuth = auth;
 }
 
 async function submitCode() {
-  const code = $("w-code").value.trim();
-  if (!code) { toast("Enter the 6-digit code first.", "err"); return; }
+  if (otpSubmitting) return;
+  const code = $("w-code").value.replace(/\D/g, "").slice(0, 6);
+  if (code.length !== 6) { toast("Enter the 6-digit code first.", "err"); $("w-code").focus(); return; }
+  otpSubmitting = true;
   const btn = $("w-submit");
   btn.disabled = true;
+  btn.textContent = "Submitting…";
   try {
     const res = await fetch("/api/wrapper/2fa", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -852,13 +3137,38 @@ async function submitCode() {
       $("w-code").value = "";
     } else {
       const resp = data.response || {};
+      const row = $("w-code-row");
+      row.classList.remove("shake");
+      void row.offsetWidth;  // restart the shake animation
+      row.classList.add("shake");
       toast("Code rejected — " + (resp.error || data.error || "try again") + ". Get a fresh one via Restart login.", "err");
+      $("w-code").select();
     }
     await refreshWrapper();
   } catch (e) { toast("Network error: " + e.message, "err"); }
-  finally { btn.disabled = false; }
+  finally { otpSubmitting = false; btn.disabled = false; btn.textContent = "Submit code"; }
 }
 
+function cooldownRestart() {
+  // Apple rate-limits rapid login retries — pause the button so users don't
+  // burn through codes.
+  const btn = $("w-restart");
+  btn.dataset.cooldown = "1";
+  let s = 30;
+  btn.disabled = true;
+  btn.textContent = `↻ Resend code (${s}s)`;
+  const tick = setInterval(() => {
+    s -= 1;
+    if (s <= 0) {
+      clearInterval(tick);
+      delete btn.dataset.cooldown;
+      btn.disabled = false;
+      btn.textContent = "↻ Restart login (send fresh code)";
+    } else {
+      btn.textContent = `↻ Resend code (${s}s)`;
+    }
+  }, 1000);
+}
 async function restartLogin() {
   const btn = $("w-restart");
   btn.disabled = true;
@@ -870,15 +3180,23 @@ async function restartLogin() {
     else {
       toast("Login restarted — a fresh code is on its way. Watch Gmail/SMS/trusted devices.", "ok");
       $("w-code").value = "";
+      cooldownRestart();
     }
     setTimeout(() => refreshWrapper(), 2500);
   } catch (e) { toast("Network error: " + e.message, "err"); }
-  finally { btn.disabled = false; btn.textContent = "↻ Restart login (send fresh code)"; }
+  finally {
+    // The cooldown takes over the button label; only reset if not cooling down.
+    if (!btn.dataset.cooldown) {
+      btn.disabled = false;
+      btn.textContent = "↻ Restart login (send fresh code)";
+    }
+  }
 }
 
 async function convertToFlac() {
   const dir = $("f-convert-dir").value.trim();
   if (!dir) { toast("Enter a folder to convert.", "err"); $("f-convert-dir").focus(); return; }
+  ensureNotifPerm();
   const btn = $("btn-convert");
   btn.disabled = true;
   try {
@@ -903,12 +3221,80 @@ $("btn-download").addEventListener("click", download);
 $("btn-migrate-preview").addEventListener("click", previewMigrate);
 $("btn-migrate-download").addEventListener("click", downloadMigrated);
 $("migrate-url").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) previewMigrate(); });
-$("btn-convert").addEventListener("click", convertToFlac);
-$("btn-settings-toggle").addEventListener("click", () => $("settings").classList.toggle("open"));
+$("urls").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) download(); });
+$("urls").addEventListener("input", scheduleUrlPreview);  $("btn-convert").addEventListener("click", convertToFlac);
+  $("btn-settings-toggle").addEventListener("click", toggleSettings);
+  $("btn-settings-fold").addEventListener("click", toggleSettings);
 $("w-submit").addEventListener("click", submitCode);
 $("w-restart").addEventListener("click", restartLogin);
 $("w-code").addEventListener("keydown", (e) => { if (e.key === "Enter") submitCode(); });
-$("btn-save-settings").addEventListener("click", saveSettings);
+// Auto-submit the OTP the moment 6 digits are typed or pasted.
+let otpSubmitTimer = null;
+$("w-code").addEventListener("input", () => {
+  clearTimeout(otpSubmitTimer);
+  otpSubmitTimer = setTimeout(() => {
+    if ($("w-code").value.replace(/\D/g, "").length >= 6) submitCode();
+  }, 250);
+});
+$("w-login-btn").addEventListener("click", loginWrapper);
+$("w-login-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") loginWrapper(); });
+$("amdl-start").addEventListener("click", async () => {
+  const b = $("amdl-start");
+  b.disabled = true; b.textContent = "Starting…";
+  try {
+    const res = await fetch("/api/wrapper/amdl/start", { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) toast(data.error || "Start failed", "err");
+    else { toast("amdl wrapper started ✓", "ok"); await refreshWrapper(); }
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+  finally { b.disabled = false; b.textContent = "▶ Start amdl wrapper"; }
+});
+$("amdl-stop").addEventListener("click", async () => {
+  try {
+    await fetch("/api/wrapper/amdl/stop", { method: "POST" });
+    toast("amdl wrapper stopped", "ok");
+    await refreshWrapper();
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+});
+$("f-apple-engine").addEventListener("change", toggleAmdlSettings);
+$("btn-w-setup-toggle").addEventListener("click", () => {
+  const panel = $("w-setup");
+  const willShow = panel.style.display === "none";
+  panel.style.display = willShow ? "block" : "none";
+  if (willShow) {
+    // Default the Intel-fix checkbox once, based on the machine.
+    if (!setupFixInitialized) {
+      setupFixInitialized = true;
+      $("w-setup-fix").checked = !(setupState.machine && setupState.machine.apple_silicon);
+    }
+    refreshSetupStatus();
+  }
+});
+$("btn-w-setup-start").addEventListener("click", startWrapperSetup);  $("btn-lib-refresh").addEventListener("click", refreshLibrary);
+  $("btn-lib-releases").addEventListener("click", showNewReleases);
+  $("btn-lib-dupes").addEventListener("click", showDuplicates);
+  $("btn-lib-smart-dupes").addEventListener("click", showSmartDuplicates);
+  $("btn-lib-cleanup").addEventListener("click", showFormatDuplicates);
+  $("btn-lib-stats").addEventListener("click", showStats);
+  $("btn-lib-ledger").addEventListener("click", showLedger);
+  $("btn-lib-import").addEventListener("click", showImportPanel);
+  $("btn-lib-export").addEventListener("click", exportBackup);
+  // Getting-started drawer (side menu): open from the header Setup pill,
+  // close via ✕, the backdrop, or Escape.
+  $("pill-setup").addEventListener("click", openSetupDrawer);
+  $("drawer-close").addEventListener("click", closeSetupDrawer);
+  $("drawer-back").addEventListener("click", closeSetupDrawer);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSetupDrawer(); });
+  // Clipboard suggestion when the URL box is empty and the page is focused.
+  window.addEventListener("focus", () => setTimeout(suggestClipboard, 400));
+  $("urls").addEventListener("focus", suggestClipboard);
+  let libSearchTimer = null;
+  $("lib-search").addEventListener("input", () => {
+    clearTimeout(libSearchTimer);
+    libSearchTimer = setTimeout(refreshLibrary, 350);
+  });
+  $("lib-search").addEventListener("keydown", (e) => { if (e.key === "Enter") refreshLibrary(); });
+  $("btn-save-settings").addEventListener("click", saveSettings);
 $("btn-clear").addEventListener("click", async () => {
   await fetch("/api/jobs", { method: "DELETE" });
   await refreshJobs();
@@ -933,13 +3319,27 @@ $("codec-seg").addEventListener("click", (e) => {
   document.querySelectorAll("#codec-seg button").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
   updateCodecHint(state.status);
+  segThumbs();
 });
+$("log-file-seg").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  document.querySelectorAll("#log-file-seg button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  syslogFile = btn.dataset.file;
+  segThumbs();
+  refreshSyslog();
+});
+$("btn-log-refresh").addEventListener("click", refreshSyslog);
+window.addEventListener("resize", segThumbs);
 
 (async function init() {
+  segThumbs();  // highlight the default codec immediately, before any network
   try {
     const [status, cfg] = await Promise.all([fetch("/api/status").then(r => r.json()), fetch("/api/config").then(r => r.json())]);
     state.status = status; state.config = cfg;
     renderPills(status);
+    refreshOnboarding();
     loadSettings(cfg);
     // Until the wrapper server is running, default to AAC 256 so downloads
     // can't fail on the ALAC license exchange.
@@ -947,13 +3347,31 @@ $("codec-seg").addEventListener("click", (e) => {
       document.querySelectorAll("#codec-seg button").forEach(b => b.classList.remove("active"));
       document.querySelector('#codec-seg button[data-codec="aac-web"]').classList.add("active");
     }
+    segThumbs();
+    const ffVer = (status.ffmpeg || "").split(/\s+/)[2] || "?";
+    $("ver").textContent = `gamdl ${status.gamdl || "?"} · ffmpeg ${ffVer} · python ${status.python || "?"}`;
     await refreshJobs();
+    refreshLibrary();
     refreshWrapper();
+    refreshSyslog();
+    refreshSetupStatus();
     setInterval(refreshWrapper, 5000);
+    setInterval(refreshSyslog, 5000);
+    // Poll the setup wizard while it's running (or the wizard is open).
+    setInterval(() => {
+      if (setupState.state === "running" || ($("w-setup").style.display !== "none")) refreshSetupStatus();
+    }, 2500);
   } catch (e) {
     toast("Could not reach the app server.", "err");
   }
 })();
+
+// Live elapsed counter for running jobs (1s tick, no re-render).
+setInterval(() => {
+  document.querySelectorAll(".elapsed[data-start]").forEach(el => {
+    el.textContent = fmtElapsed(Date.now() / 1000 - (+el.dataset.start));
+  });
+}, 1000);
 </script>
 </body>
 </html>

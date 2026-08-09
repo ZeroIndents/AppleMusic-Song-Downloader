@@ -1,7 +1,13 @@
 #!/bin/bash
 # Music High Res — wrapper-v2 setup (required for lossless ALAC / Dolby Atmos)
 #
-# Usage:  ./setup_wrapper.sh /path/to/apple-music.apk
+# Usage:  ./setup_wrapper.sh /path/to/apple-music.apk [--ui] [--fix-libs]
+#
+#   --ui         Non-interactive mode (used by the web app wizard): never
+#                prompts. Credentials, when provided, come from the
+#                WRAPPER_USERNAME / WRAPPER_PASSWORD environment variables.
+#   --fix-libs   After building, apply fix_wrapper_libs.sh (the Intel-Mac
+#                FairPlay symbol fix).
 #
 # Prerequisites:
 #   1. Docker Desktop for Mac installed and running
@@ -15,9 +21,19 @@
 set -e
 cd "$(dirname "$0")"
 
-APK="${1:-}"
+APK=""
+UI_MODE=0
+FIX_LIBS=0
+for arg in "$@"; do
+  case "$arg" in
+    --ui)       UI_MODE=1 ;;
+    --fix-libs) FIX_LIBS=1 ;;
+    *)          APK="$arg" ;;
+  esac
+done
+
 if [ -z "$APK" ]; then
-  echo "Usage: $0 /path/to/apple-music.apk"
+  echo "Usage: $0 /path/to/apple-music.apk [--ui] [--fix-libs]"
   echo "  (You must supply your own Apple Music for Android APK.)"
   exit 1
 fi
@@ -55,8 +71,19 @@ bash tools/extract-libs.sh --bundle "$APK" --arch x86_64
 echo "→ Staging Android system runtime…"
 bash tools/stage-system.sh --arch x86_64
 
-# ---- Apple ID credentials (optional; used for headless login) ----
-if [ -n "$WRAPPER_USERNAME" ] && [ -n "$WRAPPER_PASSWORD" ]; then
+# ---- Apple ID credentials ----
+if [ "$UI_MODE" = "1" ]; then
+  # Headless (web-app wizard): credentials come from the environment only.
+  if [ -n "$WRAPPER_USERNAME" ] && [ -n "$WRAPPER_PASSWORD" ]; then
+    echo "→ Writing .env with credentials from the environment…"
+    cat > .env <<EOF
+WRAPPER_USERNAME=$WRAPPER_USERNAME
+WRAPPER_PASSWORD=$WRAPPER_PASSWORD
+EOF
+  else
+    echo "→ No credentials supplied — you can log in later from the app."
+  fi
+elif [ -n "$WRAPPER_USERNAME" ] && [ -n "$WRAPPER_PASSWORD" ]; then
   echo "→ Writing .env with credentials from your environment…"
   cat > .env <<EOF
 WRAPPER_USERNAME=$WRAPPER_USERNAME
@@ -93,9 +120,17 @@ echo
 echo "━━━ wrapper status ━━━"
 curl -s http://127.0.0.1/me || echo "(wrapper not answering on http://127.0.0.1/me — check: docker compose logs)"
 
-echo
-echo "Next:"
-echo "  1. If your account has two-factor auth, you'll get a code — send it once:"
-echo "       curl -X POST http://127.0.0.1/login/2fa -H 'Content-Type: application/json' -d '{\"code\":\"000000\"}'"
-echo "  2. In the Music High Res app, enable 'Use wrapper' in Settings."
-echo "  3. Download ALAC lossless:   gamdl --use-wrapper --song-codec-priority alac \"<url>\""
+if [ "$FIX_LIBS" = "1" ]; then
+  echo
+  echo "→ Applying the Intel-Mac library fix…"
+  ( cd .. && bash fix_wrapper_libs.sh )
+fi
+
+if [ "$UI_MODE" != "1" ]; then
+  echo
+  echo "Next:"
+  echo "  1. If your account has two-factor auth, you'll get a code — send it once:"
+  echo "       curl -X POST http://127.0.0.1/login/2fa -H 'Content-Type: application/json' -d '{\"code\":\"000000\"}'"
+  echo "  2. In the Music High Res app, enable 'Use wrapper' in Settings."
+  echo "  3. Download ALAC lossless:   gamdl --use-wrapper --song-codec-priority alac \"<url>\""
+fi

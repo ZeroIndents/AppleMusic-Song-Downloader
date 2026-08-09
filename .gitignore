@@ -8,6 +8,11 @@ wrapper-v2/.env
 wrapper-v2/
 wol-wrapper/
 wrapper-v2/data/
+# amdl wrapper — Apple session DBs + login.env (Apple ID credentials) live here
+wrapper-amdl/
+
+# ── ffprobe quality cache: absolute local paths, machine-specific ─────────
+quality_cache.json
 
 # ── Android APKs (large binaries) ──────────────────────────────────────
 *.apk

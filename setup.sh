@@ -20,6 +20,12 @@ python3 -m venv .venv
 echo "→ Checking gamdl…"
 if command -v gamdl >/dev/null 2>&1; then
   gamdl --version
+  # gamdl is the most fragile dependency: `brew upgrade` can silently swap it
+  # and break ALAC downloads (Apple changes the backend constantly). Pin it so
+  # it only changes when you explicitly unpin + upgrade it. (See README.)
+  if command -v brew >/dev/null 2>&1 && brew list --versions gamdl >/dev/null 2>&1; then
+    brew pin gamdl 2>/dev/null && echo "  → pinned gamdl (brew pin) — won't auto-update"
+  fi
 else
   echo "  ! gamdl binary not on PATH — install it with:  brew install gamdl  (or pip install gamdl)"
 fi

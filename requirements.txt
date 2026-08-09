@@ -1,3 +1,29 @@
-flask>=3.0
-waitress>=3.0
-yt-dlp>=2024.1.0
+# Pinned EXACT versions — deliberate, tested releases only.
+# Accidental upgrades of these can silently break the app, so never loosen
+# these to >= without testing first.
+#
+# To upgrade intentionally:  pip install flask==<new>  then re-run setup.sh,
+# test everything, and bump the line below.
+
+flask==3.1.3
+waitress==3.0.2
+yt-dlp==2026.7.4
+mutagen==1.48.1   # tag reading/editing (Library tag editor)
+
+# ── Extra download engines (pip-installed, unlike brew gamdl) ───────────────
+# gytmdl (YouTube Music) + votify (Spotify) — both by glomatico, same author
+# as gamdl. votify needs the [librespot] extra for Spotify CDN decryption.
+# gytmdl uses yt-dlp under the hood, which is already pinned above.
+gytmdl==2.1.6
+votify==1.9.9
+librespot==0.0.1
+
+# ── gamdl (the download engine) ─────────────────────────────────────────────
+# gamdl is NOT installed via pip in this project — it's a Homebrew binary
+# (/usr/local/bin/gamdl), so requirements.txt cannot pin it. Protect it with:
+#
+#     brew pin gamdl      # stops `brew upgrade` from silently swapping it
+#     brew unpin gamdl    # allow upgrades again (after testing a new version)
+#
+# The app warns in the header when the installed gamdl drifts from the pinned
+# release (see downloader.py PINNED_GAMDL, currently 3.8.5).

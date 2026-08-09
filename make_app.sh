@@ -25,7 +25,7 @@ fi
 # 2. Generate the icon
 echo "→ generating icon…"
 .venv/bin/python - <<'PY'
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 import math
 
 S = 1024
@@ -41,11 +41,17 @@ for y in range(S):
             f = (t - 0.5) * 2
             c = (175 + (94 - 175) * f, 82 + (92 - 82) * f, 222 + (230 - 222) * f)
         img.putpixel((x, y), (int(c[0]), int(c[1]), int(c[2]), 255))
-# rounded corners mask
-mask = Image.new("L", (S, S), 0)
-md = ImageDraw.Draw(mask)
-md.rounded_rectangle([0, 0, S - 1, S - 1], radius=185, fill=255)
-img.putalpha(mask)
+# soft light halo behind the note + a top-left spotlight for depth
+halo = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+hd = ImageDraw.Draw(halo)
+hd.ellipse([240, 220, 784, 700], fill=(255, 255, 255, 42))
+halo = halo.filter(ImageFilter.GaussianBlur(90))
+img = Image.alpha_composite(img, halo)
+spot = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+sd = ImageDraw.Draw(spot)
+sd.ellipse([-300, -300, 620, 620], fill=(255, 255, 255, 30))
+spot = spot.filter(ImageFilter.GaussianBlur(180))
+img = Image.alpha_composite(img, spot)
 
 # music note (double eighth note) drawn with primitives
 note = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -67,6 +73,12 @@ nd.polygon([(x1 - 16, 260), (x2 + 16, 260), (x2 + 16, 300), (x1 - 16, 300)], fil
 note = note.rotate(-8, resample=Image.BICUBIC, center=(S // 2, S // 2))
 img = Image.alpha_composite(img, note)
 
+# rounded corners mask (applied last so the glows stay inside the tile)
+mask = Image.new("L", (S, S), 0)
+md = ImageDraw.Draw(mask)
+md.rounded_rectangle([0, 0, S - 1, S - 1], radius=185, fill=255)
+img.putalpha(mask)
+
 # write iconset
 import os
 os.makedirs("/tmp/mhr-icon.iconset", exist_ok=True)
@@ -87,62 +99,23 @@ echo "  icon → AppIcon.icns"
 cat > "$MACOS/MusicHighRes" <<'SH'
 #!/bin/bash
 # Music High Res — app launcher (inside the .app bundle).
-# Boots Docker → ALAC wrapper → app server, then opens the UI in a standalone
-# app-style window. The app stays alive in the Dock while the server runs.
+# Delegates to the universal start.sh --app-style: boots Docker → ALAC
+# wrapper → app server, then opens the UI in a standalone app-style window.
+# The app stays alive in the Dock while the server runs.
 set -u
 PROJECT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$PROJECT" || exit 1
 
-log() { echo "[Music High Res] $*"; }
+# launchd hands .app bundles a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
+# that does NOT include Homebrew's /usr/local/bin (or /opt/homebrew/bin on
+# Apple Silicon). start.sh sets a sane PATH itself, but set it here too so
+# the `bash` invocation below can find everything regardless.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
-# ── 1. Docker Desktop ──────────────────────────────────────────────────
-if ! docker info >/dev/null 2>&1; then
-  log "starting Docker Desktop…"
-  open -a Docker 2>/dev/null
-  WAIT=0
-  until docker info >/dev/null 2>&1; do
-    WAIT=$((WAIT+1))
-    [ "$WAIT" -ge 120 ] && break
-    sleep 2
-  done
-fi
-docker info >/dev/null 2>&1 && log "docker ready" || log "WARNING: docker not ready"
-
-# ── 2. ALAC wrapper ────────────────────────────────────────────────────
-if [ -d "$PROJECT/wrapper-v2" ] && docker info >/dev/null 2>&1; then
-  ( cd "$PROJECT/wrapper-v2" && docker compose up -d ) >/dev/null 2>&1
-  WAIT=0
-  while [ "$WAIT" -lt 30 ]; do
-    S=$(curl -s -m 2 http://127.0.0.1/me 2>/dev/null | grep -o '"state":"[a-z_]*"' | head -1 | cut -d'"' -f4)
-    [ "$S" = "authenticated" ] && break
-    WAIT=$((WAIT+1)); sleep 2
-  done
-  log "wrapper ready"
-fi
-
-# ── 3. App server ──────────────────────────────────────────────────────
-.venv/bin/python "$PROJECT/app.py" &
-APP_PID=$!
-trap 'kill "$APP_PID" 2>/dev/null; exit 0' SIGTERM SIGINT
-
-# wait for the server, then open the UI in an app-style window
-for _ in $(seq 1 30); do
-  if curl -s -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
-    break
-  fi
-  sleep 1
-done
-BROWSER_OPENED=0
-for BROWSER in "Brave Browser" "Google Chrome" "Microsoft Edge" "Arc"; do
-  if [ -d "/Applications/$BROWSER.app" ]; then
-    open -na "$BROWSER" --args --app=http://127.0.0.1:8741 2>/dev/null && BROWSER_OPENED=1
-    break
-  fi
-done
-[ "$BROWSER_OPENED" = "1" ] || open http://127.0.0.1:8741 2>/dev/null
-log "running → http://127.0.0.1:8741"
-
-wait "$APP_PID"
+# One source of truth for the whole boot sequence: start.sh. It also keeps
+# this process alive (waits on the server PID) so the app stays in the Dock
+# until the user right-clicks → Quit.
+exec bash "$PROJECT/start.sh" --app-style
 SH
 chmod +x "$MACOS/MusicHighRes"
 
