@@ -5,11 +5,9 @@ documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions loosely follow [Semantic Versioning](https://semver.org/).
-The project has no git tags yet, so:
-
-- **[Unreleased]** describes the **working tree** — features that are built and
-  tested locally but not yet committed/pushed to GitHub.
-- Dated sections describe what is actually **on GitHub** (`main`).
+- **[Unreleased]** — changes in the working tree not yet released.
+- Dated sections describe what is actually **on GitHub** (`main`, tagged
+  releases).
 
 Legend: **Added** — new features · **Changed** — changes to existing behavior ·
 **Fixed** — bug fixes · **Security** — hardening.
@@ -18,9 +16,16 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 
 ## [Unreleased]
 
-The full local feature set — everything in the working tree that isn't on
-GitHub yet. This is the "v2" push: multi-service downloads, a real Library
-panel, and a pile of power-user tooling.
+(nothing yet)
+
+---
+
+## [1.0.0] - 2026-08-09
+
+The first stable release. Everything built so far: multi-service downloads
+(Apple Music via gamdl or amdl, Spotify via votify, YouTube Music via
+gytmdl), a real in-app Library, automatic FLAC conversion, wrapper
+automation, Windows support, and a pile of power-user tooling.
 
 ### Added
 

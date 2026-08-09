@@ -16,6 +16,12 @@ quality_cache.json
 
 # ── Android APKs (large binaries) ──────────────────────────────────────
 *.apk
+
+# ── Release artifacts (built locally for the GitHub release) ────────────
+dist/
+# ── PyInstaller build droppings (from local binary builds) ───────────────
+build/
+*.spec
 *.apkm
 *.apks
 

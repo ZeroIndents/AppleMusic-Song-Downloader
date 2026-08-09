@@ -18,10 +18,37 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent
+try:
+    # Frozen-aware dirs (a PyInstaller binary has no repo folder — see
+    # downloader._frozen_app_dir / _frozen_res_dir).
+    from downloader import PROJECT_DIR, RES_DIR
+except ImportError:  # pragma: no cover — downloader is always present
+    PROJECT_DIR = Path(__file__).resolve().parent
+    RES_DIR = PROJECT_DIR
+
 WRAPPER_DIR = PROJECT_DIR / "wrapper-v2"
 WRAPPER_BASE = "http://127.0.0.1"
 APK_DOWNLOAD_DIR = PROJECT_DIR / "data" / "apk"
+
+
+def _bundled_script(name: str) -> Path:
+    """Path to a bundled shell script, extracted from the resource dir if needed.
+
+    Source mode: the script is already in the repo. A PyInstaller binary ships
+    it read-only inside _MEIPASS, so copy it next to the writable app home and
+    make it executable before running.
+    """
+    target = PROJECT_DIR / name
+    if target.exists():
+        return target
+    src = RES_DIR / name
+    if src.exists():
+        try:
+            shutil.copy2(src, target)
+            os.chmod(target, 0o755)
+        except OSError:
+            pass
+    return target
 
 _LOG_FILTER = ("dlsym",)  # harmless loader noise we don't want in the UI
 
@@ -646,8 +673,12 @@ class SetupManager:
             if email and password:
                 env["WRAPPER_USERNAME"] = email
                 env["WRAPPER_PASSWORD"] = password
+            # setup_wrapper.sh runs fix_wrapper_libs.sh itself (from the repo
+            # root), so extract both in a binary build.
+            _bundled_script("setup_wrapper.sh")
+            _bundled_script("fix_wrapper_libs.sh")
             cmd = [
-                bash, str(PROJECT_DIR / "setup_wrapper.sh"), "--ui", apk_path,
+                bash, str(_bundled_script("setup_wrapper.sh")), "--ui", apk_path,
             ]
             if apply_fix:
                 cmd.append("--fix-libs")

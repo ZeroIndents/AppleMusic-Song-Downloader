@@ -19,6 +19,7 @@ import wrapperctl
 import migrate
 from downloader import (
     PROJECT_DIR,
+    RES_DIR,
     Config,
     JobManager,
     WatchFolder,
@@ -69,7 +70,13 @@ from downloader import (
 
 PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
+# Keep in lockstep with the CHANGELOG heading (e.g. "[1.0.0] - 2026-08-09")
+# when cutting the next release.
+VERSION = "1.0.0"
 LOG_DIR = PROJECT_DIR / "logs"
+# static/index.html is a bundled read-only resource — in a PyInstaller binary
+# it lives in the _MEIPASS dir, in source mode next to the app.
+STATIC_DIR = RES_DIR / "static"
 
 
 def setup_logging() -> None:
@@ -172,7 +179,7 @@ def _restart_watcher_if_needed() -> None:
 # ----------------------------------------------------------------------
 @app.get("/")
 def index():
-    return send_from_directory(PROJECT_DIR / "static", "index.html")
+    return send_from_directory(STATIC_DIR, "index.html")
 
 
 # ----------------------------------------------------------------------
@@ -205,6 +212,7 @@ def api_status():
         "convert_to_flac": bool(config.get("convert_to_flac")),
         "python": os.sys.version.split()[0],
         "platform": sys.platform,  # "darwin" | "linux" | "win32" — UI uses it for Finder/Explorer labels
+        "version": VERSION,
         "any_active": manager.any_active(),
     })
 
@@ -1151,6 +1159,15 @@ def main():
     _restart_watcher_if_needed()
     print(f"\n  Music High Res is running →  http://{HOST}:{PORT}", flush=True)
     print("  Press Ctrl+C to stop.\n", flush=True)
+    # A PyInstaller binary is usually double-clicked with no terminal — open
+    # the UI automatically once the server is listening.
+    if getattr(sys, "frozen", False):
+        try:
+            import webbrowser
+
+            threading.Timer(1.5, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
+        except Exception:
+            pass
     try:
         from waitress import serve
 

@@ -15,14 +15,60 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
 import uuid
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent
+
+def _frozen_app_dir() -> Path:
+    """Writable home for a PyInstaller binary (logs, data, config.json).
+
+    In source mode this is the repo folder. In a binary it's the folder next
+    to the executable — except macOS, where the binary sits inside a read-only
+    .app bundle (or anywhere in /Applications), so ~/Music High Res is used
+    instead, and Windows, where %LOCALAPPDATA% is always writable (unlike
+    Program Files). The _MEIPASS temp dir only holds bundled read-only
+    resources (static/, the default config) — never anything we write.
+    """
+    if getattr(sys, "frozen", False):
+        if sys.platform == "darwin":
+            d = Path.home() / "Music High Res"
+        elif sys.platform == "win32":
+            d = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Music High Res"
+        else:
+            d = Path(sys.executable).resolve().parent
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return Path(__file__).resolve().parent
+
+
+def _frozen_res_dir() -> Path:
+    """Where bundled read-only resources live in a PyInstaller binary.
+
+    Onefile/onedir binaries extract their data files into sys._MEIPASS; in
+    source mode that's just the repo folder."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return Path(__file__).resolve().parent
+
+
+PROJECT_DIR = _frozen_app_dir()
+RES_DIR = _frozen_res_dir()
 CONFIG_PATH = PROJECT_DIR / "config.json"
+
+# A binary bundles a default config.json; seed the writable home with it on
+# first run so Config() finds the defaults (source mode: already in place).
+if getattr(sys, "frozen", False) and not CONFIG_PATH.exists():
+    bundled = RES_DIR / "config.json"
+    if bundled.exists():
+        try:
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(bundled, CONFIG_PATH)
+        except OSError:
+            pass
 
 DEFAULT_CONFIG = {
     # Where downloaded music folders land (Artist/Album/Track.m4a)

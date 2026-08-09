@@ -1,0 +1,94 @@
+name: release-binaries
+
+# Builds a native binary for each platform when a version tag (v*) is pushed,
+# packages it in the platform's format, and attaches it to the release.
+#
+#   - macOS  → MusicHighRes.app (onedir, windowed) wrapped in a .dmg
+#   - Windows→ MusicHighRes.exe (onefile) + docs in a .zip
+#   - Linux  → MusicHighRes (onefile) + docs in a .tar.gz
+#
+# The binaries bundle the Python app + its pip dependencies, so users no
+# longer need Python/venv. gamdl + ffmpeg (and gytmdl/votify for YouTube/
+# Spotify) remain external installs, exactly like the source installs — the
+# app shells out to them (see README). Binaries are unsigned (no Developer ID
+# certificate), so macOS shows a one-time Gatekeeper warning.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_suffix: macos
+            package: dmg
+            pyi_flags: --windowed --onedir
+          - os: windows-latest
+            artifact_suffix: windows
+            package: zip
+            pyi_flags: --onefile
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            package: tar
+            pyi_flags: --onefile
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build with PyInstaller
+        shell: bash
+        env:
+          SEP: ${{ runner.os == 'Windows' && ';' || ':' }}
+        run: |
+          pyinstaller --noconfirm --clean \
+            --name MusicHighRes ${{ matrix.pyi_flags }} \
+            --add-data "static${SEP}static" \
+            --add-data "config.json${SEP}." \
+            --add-data "setup_wrapper.sh${SEP}." \
+            --add-data "fix_wrapper_libs.sh${SEP}." \
+            app.py
+
+      - name: Package (macOS .dmg)
+        if: matrix.package == 'dmg'
+        run: |
+          hdiutil create -volname "Music High Res ${{ github.ref_name }}" \
+            -srcfolder "dist/MusicHighRes.app" \
+            -ov -format UDZO \
+            "dist/MusicHighRes-${{ github.ref_name }}-macos.dmg"
+
+      - name: Package (Windows .zip)
+        if: matrix.package == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/MusicHighRes.exe","LICENSE","README.md","FEATURES.md","CHANGELOG.md","docs" -DestinationPath "dist/MusicHighRes-${{ github.ref_name }}-windows.zip" -Force
+
+      - name: Package (Linux .tar.gz)
+        if: matrix.package == 'tar'
+        run: |
+          tar -czf "dist/MusicHighRes-${{ github.ref_name }}-linux.tar.gz" \
+            -C dist MusicHighRes -C .. LICENSE README.md CHANGELOG.md
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicHighRes-${{ matrix.artifact_suffix }}
+          path: dist/MusicHighRes-*
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MusicHighRes-*
