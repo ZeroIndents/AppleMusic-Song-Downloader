@@ -24,6 +24,15 @@ panel, and a pile of power-user tooling.
 
 ### Added
 
+- **Windows support** — the app and launchers now run on Windows:
+  `start.ps1` (PowerShell twin of `start.sh`) + `Start Music High Res.bat`
+  double-click launcher, `setup.ps1`/`setup.bat`, and a one-command
+  `install.ps1` (winget python/ffmpeg/git, gamdl via pip). The app is
+  Windows-aware end-to-end: `.venv\Scripts` layouts (`venv_bin`,
+  `gamdl_binary`), `explorer /select,` for the open-in-file-manager buttons
+  (UI labels them **Explorer** on Windows via `/api/status.platform`), and a
+  clear Git-Bash hint when the bash-based wrapper setup wizard runs without a
+  shell.
 - **Spotify downloads** (via votify) — OGG Vorbis 160/320 kbps; needs a cookies
   file exported from `open.spotify.com`. ⚠️ Spotify has suspended accounts caught
   using third-party downloaders — at your own risk.
@@ -85,6 +94,9 @@ panel, and a pile of power-user tooling.
   `--ledger-rebuild`.
 - **macOS app bundle polish** — refreshed icon (halo + spotlight), a Desktop
   shortcut on first run, and `start.sh --app-style` window mode.
+- **Repo rename** — remote moved from `gavinraspberrypi/AppleMusic-Song-Downloader`
+  to `ZeroIndents/AppleMusic-Song-Downloader`; all installer `REPO_URL`s and
+  README links updated to the canonical location.
 - **Pinned dependencies** in `requirements.txt`, a GitHub Actions CI workflow,
   and `install_linux.sh` for Linux setup.
 

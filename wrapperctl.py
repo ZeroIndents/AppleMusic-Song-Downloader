@@ -629,14 +629,25 @@ class SetupManager:
                 raise SetupError(f"APK not found: {apk_path}")
             self._add(f"✓ APK: {apk_path}")
 
-            # 3. Run the setup script (non-interactive).
+            # 3. Run the setup script (non-interactive). setup_wrapper.sh is a
+            #    bash script — on Windows that needs Git Bash (or WSL). Give a
+            #    clear error instead of a confusing "not found" crash.
             self.step = "Cloning wrapper + extracting libraries…"
+            bash = shutil.which("bash")
+            if not bash:
+                if os.name == "nt":
+                    raise SetupError(
+                        "The wrapper setup script needs a bash shell, which Windows "
+                        "doesn't ship with. Install Git for Windows (Git Bash) or "
+                        "enable WSL, then run Setup again."
+                    )
+                raise SetupError("bash not found — the wrapper setup needs a bash shell.")
             env = dict(os.environ)
             if email and password:
                 env["WRAPPER_USERNAME"] = email
                 env["WRAPPER_PASSWORD"] = password
             cmd = [
-                "/bin/bash", str(PROJECT_DIR / "setup_wrapper.sh"), "--ui", apk_path,
+                bash, str(PROJECT_DIR / "setup_wrapper.sh"), "--ui", apk_path,
             ]
             if apply_fix:
                 cmd.append("--fix-libs")

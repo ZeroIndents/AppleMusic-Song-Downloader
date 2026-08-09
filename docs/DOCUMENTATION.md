@@ -72,14 +72,16 @@ the README's "how to use it".
 | `wrapperctl.py` | Wrapper status, log tail, 2FA submit, login restart (wrapper-v2 **and** amdl) |
 | `static/index.html` | The web UI (no build step — plain HTML/CSS/JS) |
 | `config.json` | User settings (created from defaults on first run) |
-| `setup.sh` | One-time app setup (venv + pip deps) |
-| `setup_wrapper.sh` | One-time wrapper setup (clone, extract libs, stage, build) |
+| `setup.sh` / `setup.ps1` | One-time app setup (venv + pip deps) — bash for macOS/Linux, PowerShell for Windows |
+| `setup_wrapper.sh` | One-time wrapper setup (clone, extract libs, stage, build) — bash; on Windows needs Git Bash / WSL |
 | `setup_amdl_wrapper.sh` | amdl engine setup (pull amdl + itouakirai wrapper images) |
 | `fix_wrapper_libs.sh` | Repairs the Intel-Mac FairPlay symbol bug |
 | `start.sh` | **Universal one-click launcher** (macOS + Linux) — first-run setup, prerequisite checklist, Docker → wrapper → app → browser |
+| `start.ps1` | **Windows one-click launcher** (PowerShell twin of `start.sh`, flags `-Min` / `-NoBrowser` / `-NoDocker`) |
 | `Start Music High Res.command` | macOS double-click launcher (thin wrapper around `start.sh`) |
+| `Start Music High Res.bat` | Windows double-click launcher (thin wrapper around `start.ps1`) |
 | `make_app.sh` | Builds `Music High Res.app` (Dock icon, standalone window; launcher delegates to `start.sh --app-style`) |
-| `install.sh` / `install_linux.sh` | One-command macOS/Linux installers (prereqs + repo + venv) |
+| `install.sh` / `install_linux.sh` / `install.ps1` | One-command installers — macOS / Linux / Windows (prereqs + repo + venv) |
 | `logs/` | `app.log` (rotating server log) + `launcher.log` (startup output) |
 
 ---
@@ -571,8 +573,8 @@ table form. Highlights of the non-obvious ones:
 
 ## 6. One-click boot
 
-The single source of truth is **`start.sh`** — a universal launcher that works
-on macOS and Linux. The other two launchers are thin wrappers around it:
+The single source of truth is **`start.sh`** (macOS + Linux) and its Windows
+twin **`start.ps1`**. Every other launcher is a thin wrapper around one of them:
 
 - **`start.sh`** — sets a sane PATH (Homebrew + `~/.local/bin`), runs
   `setup.sh` on first launch (**venv health check**: a half-created `.venv`
@@ -586,6 +588,17 @@ on macOS and Linux. The other two launchers are thin wrappers around it:
   (`~/Desktop/Music High Res.app`, skip with `MHR_NO_DESKTOP=1`). Flags:
   `--min` (AAC-only: skip Docker + wrapper), `--no-docker`, `--no-browser`,
   `--app-style` (standalone window). Output is teed to `logs/launcher.log`.
+- **`start.ps1`** — the Windows launcher. Same responsibilities as
+  `start.sh`: runs `setup.ps1` on first launch (same `import flask` venv
+  health check), prints the prerequisite checklist, launches Docker Desktop
+  when installed but stopped (bounded probe via a background job — never
+  hangs), boots wrapper-v2 when present, starts (or reuses) the app server,
+  and opens the browser. Flags mirror the bash version: `-Min`, `-NoDocker`,
+  `-NoBrowser`. Output is teed to `logs\launcher.log` via `Start-Transcript`.
+  Note: `start.sh`'s `--app-style` and the Desktop-shortcut step are macOS
+  only — on Windows the `.bat` double-click IS the app.
+- **`Start Music High Res.bat`** — Windows double-click convenience: just
+  `powershell -NoProfile -ExecutionPolicy Bypass -File start.ps1 %*`.
 - **`Start Music High Res.command`** — macOS double-click convenience: just
   `exec bash start.sh "$@"`.
 - **`Music High Res.app`** (built by `./make_app.sh`) — a real macOS app bundle
@@ -637,7 +650,29 @@ Docker Desktop also **auto-starts at login** via the LaunchAgent
   startup, wrapper bring-up, and any server crash output.
 
 Both live under the project folder (gitignored via `*.log`) and are created
-automatically on first run.
+automatically on first run. On Windows the launcher writes them via
+`Start-Transcript` to the same `logs\` folder.
+
+### Windows specifics
+
+- **Python environment** — the venv lives at `.venv\Scripts\` (not
+  `.venv/bin`); `downloader.venv_bin()` and `gamdl_binary()` already probe
+  both layouts, so pip-installed CLIs (gytmdl, votify, gamdl) resolve on
+  Windows.
+- **gamdl** — on Windows it's installed with `pip install gamdl` (there's no
+  Homebrew). The setup/install scripts do this automatically; `install.ps1`
+  also adds pip's `Scripts` dir to the user PATH when needed.
+- **"Open in Finder" buttons** — the UI labels them **Explorer** on Windows
+  (`/api/status.platform` drives the label), and `/api/library/open` uses
+  `explorer /select,` instead of macOS `open -R`.
+- **ALAC wrapper setup** — `setup_wrapper.sh` is a bash script; on Windows the
+  in-app wizard (and `setup_wrapper.sh`) needs **Git for Windows (Git Bash)**
+  or WSL. `wrapperctl.SetupManager` checks for `bash` and raises a clear error
+  naming Git Bash when it's missing. Docker Desktop for Windows (WSL2 backend)
+  is required for the wrapper.
+- **Launcher autostart** — the macOS LaunchAgent / `open -a Docker` bits don't
+  exist on Windows; `start.ps1` just launches "Docker Desktop" when Docker is
+  installed but the daemon is down.
 
 ```bash
 # App logs
@@ -672,6 +707,7 @@ pkill -f 'app.py'                                # app
 ---
 
 ## 8. Security notes
+
 
 - **`cookies.txt` is a live Apple session** — never commit it, never share it.
   It is in `.gitignore`. Same for a **Spotify** cookies file (it's a live

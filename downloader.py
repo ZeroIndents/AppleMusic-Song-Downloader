@@ -196,7 +196,10 @@ PINNED_GAMDL = "3.8.5"
 
 
 def gamdl_binary() -> str | None:
-    return shutil.which("gamdl")
+    """gamdl binary: PATH, or the venv's Scripts/bin dir (Windows installs gamdl
+    via pip, so it can land in .venv/Scripts even when not on PATH). venv_bin
+    already falls back to shutil.which, so this is just venv_bin("gamdl")."""
+    return venv_bin("gamdl")
 
 
 # Cache the version so /api/status doesn't spawn a subprocess on every poll.
@@ -225,13 +228,19 @@ def gamdl_version() -> str | None:
 def venv_bin(name: str) -> str | None:
     """Resolve a pip-installed CLI in this project's venv (fallback: PATH).
 
-    gytmdl/votify install into .venv/bin via requirements.txt; the app server
-    is launched with .venv/bin/python, which does NOT put .venv/bin on PATH
-    for child processes — so commands must use the resolved absolute path.
+    gytmdl/votify install into .venv/bin (macOS/Linux) or .venv/Scripts
+    (Windows) via requirements.txt; the app server is launched with
+    .venv/bin/python (or .venv/Scripts/python.exe), which does NOT put the
+    venv's bin dir on PATH for child processes — so commands must use the
+    resolved absolute path.
     """
-    p = PROJECT_DIR / ".venv" / "bin" / name
-    if p.exists():
-        return str(p)
+    bin_dir = PROJECT_DIR / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+    exe = bin_dir / (name + (".exe" if os.name == "nt" else ""))
+    if exe.exists():
+        return str(exe)
+    bare = bin_dir / name
+    if bare.exists():
+        return str(bare)
     return shutil.which(name)
 
 

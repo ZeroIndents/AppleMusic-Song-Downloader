@@ -1086,6 +1086,10 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+// File-manager label for the "open in …" buttons: "Finder" on macOS,
+// "Explorer" on Windows. Set from /api/status.platform at boot.
+let FILE_MGR = "Finder";
+
 const state = {
   status: null,
   config: null,
@@ -1973,7 +1977,7 @@ function renderLibrary(d) {
         ${p.artist ? `<span class="muted-sm">${escapeHtml(p.artist)}</span>` : ""}
         ${p.copied ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)">folder</span>` : `<span class="badge">.m3u</span>`}
         <span class="cnt">${p.track_count} track${p.track_count === 1 ? "" : "s"}${p.size_bytes ? " · " + fmtBytes(p.size_bytes) : ""}</span>
-        <button class="link-btn" data-open="${encodeURIComponent(p.path)}">Finder</button>
+        <button class="link-btn" data-open="${encodeURIComponent(p.path)}">${FILE_MGR}</button>
       </div>`
     ).join("") + `</div>`;
   }
@@ -1994,7 +1998,7 @@ function renderLibrary(d) {
         ${al.added ? `<span class="badge" title="Added to your library">📅 ${fmtDate(al.added)}</span>` : ""}
         <span class="cnt">${al.track_count} · ${fmtBytes(al.size_bytes)}</span>
         <button class="link-btn" data-edit="${encodeURIComponent(al.path)}" title="Edit track tags">✎</button>
-        <button class="link-btn" data-open="${encodeURIComponent(al.path)}">Finder</button>
+        <button class="link-btn" data-open="${encodeURIComponent(al.path)}">${FILE_MGR}</button>
       </div>`
     ).join("");
     return `<details class="lib-artist">
@@ -2004,7 +2008,7 @@ function renderLibrary(d) {
   }).join("");
   if (d.artists.length) html += `</div>`;
   root.innerHTML = html;
-  // Wire the Finder buttons (delegation: they're re-rendered on refresh).
+  // Wire the open-in-file-manager buttons (delegation: re-rendered on refresh).
   root.querySelectorAll("[data-open]").forEach(btn => {
     btn.addEventListener("click", () => openInFinder(decodeURIComponent(btn.dataset.open)));
   });
@@ -2101,10 +2105,10 @@ async function showDuplicates() {
           `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.path)}</span>
             ${f.quality ? `<span class="badge">${escapeHtml(f.quality)}</span>` : ""}
-            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">Finder</button>
+            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">${FILE_MGR}</button>
           </div>`).join("")}</div>
       </div>`).join("") + `</div>` +
-      `<div class="hint">Playlist copies are excluded. Keep the highest-quality one and delete the rest in Finder — this tool never deletes anything itself.</div>`;
+      `<div class="hint">Playlist copies are excluded. Keep the highest-quality one and delete the rest in ${FILE_MGR} — this tool never deletes anything itself.</div>`;
     box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
   } catch (e) {
     box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
@@ -2136,7 +2140,7 @@ async function openInFinder(path) {
       body: JSON.stringify({ path }),
     });
     const data = await res.json();
-    if (!data.ok) toast(data.error || "Could not open in Finder.", "err");
+    if (!data.ok) toast(data.error || `Could not open in ${FILE_MGR}.`, "err");
   } catch (e) {
     toast("Network error: " + e.message, "err");
   }
@@ -2164,10 +2168,10 @@ async function showSmartDuplicates() {
           `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</span>
             ${f.quality ? `<span class="badge">${escapeHtml(f.quality)}</span>` : ""}
-            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">Finder</button>
+            <button class="link-btn" data-open="${encodeURIComponent(f.path)}">${FILE_MGR}</button>
           </div>`).join("")}</div>
       </div>`).join("") + `</div>` +
-      `<div class="hint">Matches by decoding the first 15s of audio (mono PCM hash), so ALAC vs FLAC or renamed files of the same master are caught. Lossy AAC won't match lossless of the same song — that's expected. Keep the best-quality copy and delete the rest in Finder; this tool never deletes.</div>`;
+      `<div class="hint">Matches by decoding the first 15s of audio (mono PCM hash), so ALAC vs FLAC or renamed files of the same master are caught. Lossy AAC won't match lossless of the same song — that's expected. Keep the best-quality copy and delete the rest in ${FILE_MGR}; this tool never deletes.</div>`;
     box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
   } catch (e) {
     box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
@@ -2296,7 +2300,7 @@ async function renderTrashStrip() {
     const data = await res.json();
     if (!data.ok) return;
     let html = `<div class="lib-group" style="margin-top:16px"><h3>🗑 Trash — ${data.files} file${data.files === 1 ? "" : "s"} · ${fmtBytes(data.bytes)} (recoverable)
-      <button class="link-btn" style="text-transform:none;letter-spacing:0" data-open="${encodeURIComponent(data.path)}">Open in Finder</button></h3>`;
+      <button class="link-btn" style="text-transform:none;letter-spacing:0" data-open="${encodeURIComponent(data.path)}">Open in ${FILE_MGR}</button></h3>`;
     if (!data.files) {
       html += `<div class="lib-empty" style="padding:10px 0">Nothing in trash.</div>`;
     } else {
@@ -2308,7 +2312,7 @@ async function renderTrashStrip() {
       ).join("");
       html += `<div style="margin-top:8px"><button class="link-btn danger" id="btn-empty-trash">Empty trash (permanently deletes ${data.files} file${data.files === 1 ? "" : "s"})</button></div>`;
     }
-    html += `<div class="hint" style="margin-top:6px">Trash lives in <code>.trash/</code> inside your music folder — drag anything back in Finder if you prefer.</div></div>`;
+    html += `<div class="hint" style="margin-top:6px">Trash lives in <code>.trash/</code> inside your music folder — drag anything back in ${FILE_MGR} if you prefer.</div></div>`;
     box.insertAdjacentHTML("beforeend", html);
     box.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openInFinder(decodeURIComponent(b.dataset.open))));
     box.querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", async () => {
@@ -2998,9 +3002,15 @@ async function loginWrapper() {
 }
 
 /* ---------------- boot ---------------- */
+function applyPlatform(status) {
+  // "Finder" on macOS, "Explorer" on Windows (labels under the library rows).
+  if (status && status.platform === "win32") FILE_MGR = "Explorer";
+}
+
 async function refreshStatus() {
   const res = await fetch("/api/status");
   state.status = await res.json();
+  applyPlatform(state.status);
   renderPills(state.status);
 }
 
@@ -3338,6 +3348,7 @@ window.addEventListener("resize", segThumbs);
   try {
     const [status, cfg] = await Promise.all([fetch("/api/status").then(r => r.json()), fetch("/api/config").then(r => r.json())]);
     state.status = status; state.config = cfg;
+    applyPlatform(status);
     renderPills(status);
     refreshOnboarding();
     loadSettings(cfg);

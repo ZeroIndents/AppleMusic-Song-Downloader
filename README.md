@@ -28,49 +28,18 @@ Navidrome, or any home music server.
 
 ---
 
-## ⚡ One-command install (macOS only)
-
-> **Platform support:** this installer is **macOS only** for now (Intel & Apple
-> Silicon). **Linux support is coming soon.** The app itself is plain Python and
-> portable; the macOS-specific bits are the launchers and the wrapper setup.
-
-**New machine?** One command downloads everything, installs Homebrew + gamdl +
-ffmpeg, clones the repo, creates the Python environment and prints your next
-steps:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/gavinraspberrypi/AppleMusic-Song-Downloader/main/install.sh | bash
-```
-
-Already cloned it? Just run it from inside the repo:
-
-```bash
-./install.sh
-```
-
-What it does (and what it deliberately does **not**):
-
-- ✅ Checks you're on macOS (with a clear message otherwise)
-- ✅ Installs Homebrew, git, python3, ffmpeg, and **gamdl** (and pins gamdl so
-  `brew upgrade` can't silently break downloads)
-- ✅ Clones the repo (bootstrap mode) and installs the Python dependencies
-- ❌ Does **not** ask for your Apple ID, cookies, or APK — those stay manual
-  (export cookies → Step 1, optional lossless wrapper → Step 3)
-
----
-
 ## What you need
 
-| Requirement | Status | Notes |
-|---|---|---|
-| macOS + Python 3.10+ | ✅ 3.14.6 | Intel & Apple Silicon; Linux coming soon |
-| gamdl | ✅ v3.8.5 | `brew install gamdl` |
-| ffmpeg | ✅ v8.1.2 | `brew install ffmpeg` (needed for FLAC) |
-| gytmdl + votify | ✅ via pip | installed by `setup.sh` (pinned in requirements.txt) |
-| **Active Apple Music subscription** | ✅ | required for every Apple Music download |
-| Apple Music cookies | ✅ | Step 1 (not needed if using the wrapper) |
-| Docker Desktop + wrapper | ✅ | Step 3 — required for **ALAC / Atmos** |
-| amdl image (optional) | 🔀 | second Apple engine — see Step 3 (alternative) |
+| Requirement | macOS | Windows | Linux | Notes |
+|---|---|---|---|---|
+| Python 3.10+ | ✅ 3.14.6 | ✅ 3.12+ | ✅ | macOS via brew / python.org; Windows via python.org / winget; Linux via your package manager |
+| gamdl | ✅ v3.8.5 | ✅ via pip | ✅ via pip | macOS: `brew install gamdl` · Win/Linux: `pip install gamdl` |
+| ffmpeg | ✅ v8.1.2 | ✅ winget | ✅ apt/dnf/pacman | needed for FLAC + in-app player |
+| gytmdl + votify | ✅ via pip | ✅ via pip | ✅ via pip | installed by `setup.sh` / `setup.ps1` (pinned in requirements.txt) |
+| **Active Apple Music subscription** | ✅ | ✅ | ✅ | required for every Apple Music download |
+| Apple Music cookies | ✅ | ✅ | ✅ | Step 1 (not needed if using the wrapper) |
+| Docker Desktop + wrapper | ✅ | ✅ (WSL2) | ✅ | Step 3 — required for **ALAC / Atmos** |
+| amdl image (optional) | 🔀 | 🔀 | 🔀 | second Apple engine — see Step 3 (alternative) |
 
 ---
 
@@ -80,7 +49,14 @@ What it does (and what it deliberately does **not**):
 downloads the repo, sets up the app):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gavinraspberrypi/AppleMusic-Song-Downloader/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZeroIndents/AppleMusic-Song-Downloader/main/install.sh | bash
+```
+
+**Windows — one command does everything** (installs Python + ffmpeg via winget,
+gamdl via pip, downloads the repo, sets up the app):
+
+```powershell
+irm https://raw.githubusercontent.com/ZeroIndents/AppleMusic-Song-Downloader/main/install.ps1 | iex
 ```
 
 Already have the folder?
@@ -104,8 +80,30 @@ brew install gamdl ffmpeg
 ./setup_wrapper.sh ~/Downloads/apple-music.apk
 ```
 
-`start.sh` handles everything: first-run setup, a prerequisite checklist, Docker
-startup, the ALAC wrapper, the app server, and opening your browser.
+**Windows, already have the folder?**
+
+```powershell
+# 1. Install prerequisites (one-time)
+winget install Python.Python.3.12 Gyan.FFmpeg
+pip install gamdl
+
+# 2. Set up the app (creates .venv + installs dependencies)
+.\setup.bat          # or: powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
+
+# 3. Export cookies from a browser signed into music.apple.com → save as cookies.txt
+
+# 4. Start the app — one click
+.\"Start Music High Res.bat"
+#    …or: powershell -NoProfile -ExecutionPolicy Bypass -File start.ps1
+#    …or run: .venv\Scripts\python.exe app.py
+
+# 5. (Optional, for lossless ALAC) Docker Desktop + wrapper — see Step 3
+#    (the wrapper setup script is bash; on Windows install Git for Windows / Git Bash first)
+```
+
+`start.sh` (macOS/Linux) and `start.ps1` (Windows) handle everything: first-run
+setup, a prerequisite checklist, Docker startup, the ALAC wrapper, the app
+server, and opening your browser.
 
 ---
 
@@ -128,7 +126,7 @@ gamdl logs in as *you* using your browser's Apple Music session cookies.
 
 ## Step 2 — Start the app
 
-Three ways to launch — pick your favourite:
+Four ways to launch — pick your favourite:
 
 - **Universal (macOS + Linux)**: `./start.sh` — the one-click launcher. It runs
   setup on first launch (it even re-runs setup if it detects a half-created
@@ -138,6 +136,10 @@ Three ways to launch — pick your favourite:
   `Music High Res.app` and puts a **Desktop shortcut** to it (future launches
   are a single double-click). Flags: `--min` (AAC only, skip Docker/wrapper),
   `--no-browser`, `--no-docker`.
+- **Windows**: double-click **`Start Music High Res.bat`** (or run
+  `start.ps1` — the Windows twin of `start.sh`, same flags: `-Min`,
+  `-NoBrowser`, `-NoDocker`). First launch runs `setup.bat` automatically, and
+  Docker Desktop is launched when installed.
 - **Like a normal Mac app**: run `./make_app.sh` once, then double-click
   **`Music High Res.app`** in Finder. It gets a Dock icon and opens the UI in a
   standalone app-style window. *(The app stays in the Dock while it runs;
@@ -145,10 +147,10 @@ Three ways to launch — pick your favourite:
 - **Classic**: double-click `Start Music High Res.command`, or run
   `./setup.sh` then `.venv/bin/python app.py` in a Terminal.
 
-All three boot Docker + the ALAC wrapper automatically when needed, and reuse
-an already-running server instead of failing with "Address already in use".
-The app's header shows a **"0 · Getting started"** checklist so you always
-know what's left to set up.
+All launchers boot Docker + the ALAC wrapper automatically when needed, and
+reuse an already-running server instead of failing with "Address already in
+use". The app's header shows a **"0 · Getting started"** checklist so you
+always know what's left to set up.
 
 → UI: **http://127.0.0.1:8741**
 
@@ -427,6 +429,7 @@ the app for you:
 
 **1. Pick one:**
 - `./start.sh` — works on **macOS and Linux**
+- Double-click **`Start Music High Res.bat`** (Windows)
 - Double-click **`Start Music High Res.command`** (macOS)
 - Double-click **`Music High Res.app`** (macOS, after `./make_app.sh`)
 
@@ -480,6 +483,8 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 | amdl panel says "port conflict" | `wrapper-v2` is still running — hit **Start** on the amdl panel (it stops wrapper-v2 first) or `cd wrapper-v2 && docker compose down` |
 | amdl downloads fail / wrong quality | Check Settings → amdl **Atmos cap** / **ALAC max**; amdl needs the wrapper running (`state: running`) |
 | Downloads slow after reboot | Docker Desktop needs ~1 min to boot the first time; the start script waits for it |
+| Windows: wrapper setup says bash not found | Install **Git for Windows** (ships Git Bash) or enable WSL, then run the setup wizard again — `setup_wrapper.sh` is a bash script |
+| Windows: app won't start, "python not found" | Install Python 3.10+ from python.org (check *Add to PATH*) or `winget install Python.Python.3.12` |
 | Something broke and you need to know why | Logs live in `logs/` — `logs/app.log` (server, rotates at 1 MB × 3) and `logs/launcher.log` (startup). See `docs/DOCUMENTATION.md §7` |
 
 ---
@@ -501,7 +506,7 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 - **WorldObservationLog/wrapper** — the library build used by `fix_wrapper_libs.sh`.
 - **This project (AppleMusic Song Downloader)** — the web app, CLI, FLAC
   conversion, wrapper automation, setup scripts, and documentation by
-  **gavinjoseph**.
+  **gavinjoseph** / **ZeroIndents** (GitHub).
 
 ---
 

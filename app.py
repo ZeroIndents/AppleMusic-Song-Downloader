@@ -204,6 +204,7 @@ def api_status():
         "codec": config.get("song_codec_priority"),
         "convert_to_flac": bool(config.get("convert_to_flac")),
         "python": os.sys.version.split()[0],
+        "platform": sys.platform,  # "darwin" | "linux" | "win32" — UI uses it for Finder/Explorer labels
         "any_active": manager.any_active(),
     })
 
@@ -817,8 +818,9 @@ def api_new_releases():
 
 @app.post("/api/library/open")
 def api_library_open():
-    """Reveal a library path in Finder. Path must live under the output folder
-    (loopback-only app, but no reason to let a URL open arbitrary paths)."""
+    """Reveal a library path in the OS file manager (Finder / Explorer). Path
+    must live under the output folder (loopback-only app, but no reason to let
+    a URL open arbitrary paths)."""
     import subprocess
 
     body = request.get_json(silent=True) or {}
@@ -834,13 +836,20 @@ def api_library_open():
     if not target.exists():
         return jsonify({"ok": False, "error": "That path no longer exists."}), 404
     try:
-        # -R reveals the item in a Finder window; for folders plain `open` works too.
-        if target.is_dir():
-            subprocess.Popen(["open", str(target)])
+        if os.name == "nt":
+            # Windows Explorer: /select, reveals the item; folders just open.
+            if target.is_dir():
+                subprocess.Popen(["explorer", str(target)])
+            else:
+                subprocess.Popen(["explorer", "/select,", str(target)])
         else:
-            subprocess.Popen(["open", "-R", str(target)])
+            # macOS Finder: -R reveals the item in a window; folders plain `open`.
+            if target.is_dir():
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["open", "-R", str(target)])
     except OSError as e:
-        return jsonify({"ok": False, "error": f"Could not open Finder: {e}"}), 500
+        return jsonify({"ok": False, "error": f"Could not open the file manager: {e}"}), 500
     return jsonify({"ok": True})
 
 

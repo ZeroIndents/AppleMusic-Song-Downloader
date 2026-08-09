@@ -24,7 +24,7 @@ ok()   { echo "${GREEN}✓${NC} $*"; }
 warn() { echo "${YELLOW}!${NC} $*"; }
 die()  { echo "${RED}✗${NC} $*" >&2; exit 1; }
 
-REPO_URL="https://github.com/gavinraspberrypi/AppleMusic-Song-Downloader.git"
+REPO_URL="https://github.com/ZeroIndents/AppleMusic-Song-Downloader.git"
 
 # ── 1. Platform gate ────────────────────────────────────────────────────
 echo "${BOLD}Music High Res — installer${NC}"

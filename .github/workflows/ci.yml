@@ -39,6 +39,24 @@ jobs:
           # .command files (double-click launchers) too
           bash -n "Start Music High Res.command" && echo "bash -n OK: Start Music High Res.command"
 
+      # pwsh (PowerShell Core) ships on GitHub-hosted runners, so the Windows
+      # launcher scripts can be syntax-checked on the same Linux job.
+      - name: PowerShell syntax check (Windows launchers)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @('start.ps1', 'setup.ps1', 'install.ps1')
+          foreach ($f in $files) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "Syntax errors in $f:"
+              $errors | ForEach-Object { Write-Host "  $($_.Message) (line $($_.Extent.StartLineNumber))" }
+              exit 1
+            }
+            Write-Host "PS parse OK: $f"
+          }
+
       - name: Smoke import (app + modules load)
         run: |
           python - <<'PY'
@@ -62,3 +80,57 @@ jobs:
           print("extracted inline script")
           PY
           node --check /tmp/ui.js && echo "JS OK"
+
+  # Windows smoke: the app code must import + py_compile cleanly on Windows
+  # (venv Scripts layout, explorer open path, wrapper bash guard all differ).
+  windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile app.py cli.py downloader.py migrate.py wrapperctl.py
+          Write-Output "py_compile OK"
+
+      - name: Smoke import + Windows-aware helpers
+        run: |
+          python -c "
+import downloader
+# venv_bin must probe the Windows Scripts layout without crashing.
+_ = downloader.venv_bin('votify')
+# gamdl_binary falls back to PATH; must never raise on Windows.
+try:
+    downloader.gamdl_binary()
+except Exception as e:
+    raise SystemExit(f'gamdl_binary raised on Windows: {e}')
+cfg = downloader.Config()
+assert cfg.get('output_path')
+print('Windows smoke import OK')
+"
+
+      - name: PowerShell syntax check (Windows launchers)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @('start.ps1', 'setup.ps1', 'install.ps1')
+          foreach ($f in $files) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "Syntax errors in $f:"
+              $errors | ForEach-Object { Write-Host "  $($_.Message) (line $($_.Extent.StartLineNumber))" }
+              exit 1
+            }
+            Write-Host "PS parse OK: $f"
+          }
