@@ -195,11 +195,25 @@ def resolve_cookies_path(config: Config) -> str:
 PINNED_GAMDL = "3.8.5"
 
 
+# Homebrew installs to /usr/local/bin (Intel) or /opt/homebrew/bin (Apple
+# Silicon). GUI-launched processes (Finder double-click, launchd agents, .app
+# bundles) often inherit a minimal PATH without those dirs — so a PATH-only
+# lookup would report gamdl/ffmpeg "missing" even when they're installed.
+# Check the well-known Homebrew dirs explicitly as a fallback.
+def _homebrew_bin(name: str) -> str | None:
+    for d in ("/opt/homebrew/bin", "/usr/local/bin"):
+        p = Path(d) / name
+        if p.is_file():
+            return str(p)
+    return None
+
+
 def gamdl_binary() -> str | None:
-    """gamdl binary: PATH, or the venv's Scripts/bin dir (Windows installs gamdl
-    via pip, so it can land in .venv/Scripts even when not on PATH). venv_bin
-    already falls back to shutil.which, so this is just venv_bin("gamdl")."""
-    return venv_bin("gamdl")
+    """gamdl binary: PATH, the venv's Scripts/bin dir (Windows pip installs),
+    or the Homebrew dirs directly (GUI-launched processes with a minimal PATH).
+    venv_bin already falls back to shutil.which, so this is venv_bin + the
+    Homebrew fallback."""
+    return venv_bin("gamdl") or _homebrew_bin("gamdl")
 
 
 # Cache the version so /api/status doesn't spawn a subprocess on every poll.
@@ -210,9 +224,10 @@ def gamdl_version() -> str | None:
     now = time.time()
     if _VERSION_CACHE["value"] is not None and now - _VERSION_CACHE["at"] < 30:
         return _VERSION_CACHE["value"]
+    binary = gamdl_binary() or "gamdl"
     try:
         out = subprocess.run(
-            ["gamdl", "--version"],
+            [binary, "--version"],
             capture_output=True, text=True, timeout=10,
         )
         if out.returncode == 0:
@@ -319,11 +334,11 @@ def gamdl_pinned_ok() -> bool | None:
 
 
 def ffmpeg_binary() -> str | None:
-    return shutil.which("ffmpeg")
+    return shutil.which("ffmpeg") or _homebrew_bin("ffmpeg")
 
 
 def ffprobe_binary() -> str | None:
-    return shutil.which("ffprobe")
+    return shutil.which("ffprobe") or _homebrew_bin("ffprobe")
 
 
 _FFMPEG_VERSION_CACHE: dict = {"value": None, "at": 0.0}
@@ -333,9 +348,10 @@ def ffmpeg_version() -> str | None:
     now = time.time()
     if _FFMPEG_VERSION_CACHE["value"] is not None and now - _FFMPEG_VERSION_CACHE["at"] < 30:
         return _FFMPEG_VERSION_CACHE["value"]
+    binary = ffmpeg_binary() or "ffmpeg"
     try:
         out = subprocess.run(
-            ["ffmpeg", "-version"],
+            [binary, "-version"],
             capture_output=True, text=True, timeout=10,
         )
         if out.returncode == 0:
@@ -1029,7 +1045,10 @@ class Job:
 
 def build_gamdl_command(config: Config, options: dict, urls: list[str]) -> list[str]:
     """Construct the gamdl CLI command from app settings + per-job options."""
-    cmd = ["gamdl", "-n"]  # -n: ignore ~/.gamdl/config.ini, use explicit flags
+    # Resolve the real binary (PATH may lack Homebrew's dir in GUI launches) —
+    # same pattern as build_gytmdl_command / build_votify_command.
+    binary = gamdl_binary() or "gamdl"
+    cmd = [binary, "-n"]  # -n: ignore ~/.gamdl/config.ini, use explicit flags
 
     if options.get("cookies_path"):
         cookies = expand_path(options.get("cookies_path"))
