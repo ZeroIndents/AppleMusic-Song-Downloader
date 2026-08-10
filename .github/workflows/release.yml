@@ -82,13 +82,24 @@ jobs:
           tar -czf "dist/MusicHighRes-${{ github.ref_name }}-linux.tar.gz" \
             -C dist MusicHighRes -C .. LICENSE README.md CHANGELOG.md
 
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          shasum -a 256 MusicHighRes-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: MusicHighRes-${{ matrix.artifact_suffix }}
-          path: dist/MusicHighRes-*
+          path: |
+            dist/MusicHighRes-*
+            dist/SHA256SUMS.txt
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/MusicHighRes-*
+          files: |
+            dist/MusicHighRes-*
+            dist/SHA256SUMS.txt
