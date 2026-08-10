@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/License-Personal%20%2F%20Non--commercial-ff5b8a?style=flat-square" alt="License">
   <img src="https://img.shields.io/github/v/release/ZeroIndents/AppleMusic-Song-Downloader?style=flat-square" alt="Release">
-  <img src="https://img.shields.io/badge/v1.0.0-Release-ff5b8a?style=flat-square" alt="v1.0.0">
+  <img src="https://img.shields.io/badge/v1.2.0-Release-ff5b8a?style=flat-square" alt="v1.2.0">
 </p>
 
 <p align="center">
@@ -36,6 +36,9 @@
 | 📚 **In-app Library** | artists → albums → tracks, quality badges, search, in-browser player, tag editor |
 | 🧠 **Smart tools** | MusicBrainz auto-tagging · smart duplicate finder · FLAC/ALAC cleanup · ledger · wishlist · 30s previews |
 | 🛰️ **Media-server ready** | Navidrome / Plex / Jellyfin scan presets · .m3u + CUE export · watch folder |
+| 🔄 **Format conversion** | any album → FLAC / MP3 320k / Opus / AAC / OGG (originals kept) |
+| 💬 **Lyrics + play tracking** | synced `.lrc` viewer in the player · play counts + last-played in the ledger |
+| 🎨 **Make it yours** | light/dark theme · cover viewer & replace · track-level search · library index export |
 
 > 📖 **Everything it can do** — every codec (ALAC / AAC / Atmos / FLAC / Opus / OGG Vorbis), every setting, every CLI flag, every API endpoint — lives in **[FEATURES.md](FEATURES.md)**. Internals: [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md). Release history: **[CHANGELOG.md](CHANGELOG.md)**.
 
@@ -266,7 +269,7 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 |---|---|
 | `Cookies missing` pill is yellow | Export cookies from a logged-in browser → `cookies.txt` |
 | `401 / authentication` errors | Cookies expired — re-export and replace `cookies.txt` |
-| ALAC fails with `-1002` | Wrapper not running or not logged in — redo Step 3 |
+| ALAC / **Dolby Atmos** fails with a cryptic gamdl error (`-1002`, "could not find requested codec") | Atmos and pure ALAC **require** the wrapper — the app now fails fast with a clear message (enable **Use wrapper** in Settings → Wrapper & login; start Docker; log in). See Step 3 |
 | ALAC fails with `-42812` (Intel) | Run `./fix_wrapper_libs.sh` (the symbol fix) |
 | `No active Apple Music subscription` | Confirm your plan at music.apple.com |
 | Artist link downloads nothing | gamdl prompts interactively; the app auto-selects **All albums** (change in Settings) |
@@ -286,7 +289,15 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 
 ## 📚 Power-user features (all in Settings or the UI)
 
-- **In-app player** — ▶ on any album plays it right in the browser: seek, volume, next/previous, all without leaving the app. Plays **every format in every browser** — ALAC files are auto-transcoded to AAC on the fly (ffmpeg) for Chrome/Firefox/Edge, which can't decode ALAC natively. Feeds the **macOS now-playing widget** (Media Session: lock screen / Control Center), remembers your **volume**, shows buffering + error toasts, and answers **keyboard shortcuts** (Space play/pause, ←/→ seek, ↑/↓ volume, M mute). Plus **30s preview playback** — every song/album chip has a ▶ button that plays a free 30-second Apple snippet before you download.
+- **In-app player** — ▶ on any album plays it right in the browser: seek, volume, next/previous, all without leaving the app. Plays **every format in every browser** — ALAC files are auto-transcoded to AAC on the fly (ffmpeg) for Chrome/Firefox/Edge, which can't decode ALAC natively. Feeds the **macOS now-playing widget** (Media Session: lock screen / Control Center), remembers your **volume**, shows buffering + error toasts, and answers **keyboard shortcuts** (Space play/pause, ←/→ seek, ↑/↓ volume, M mute, **T** theme, **L** lyrics). Plus **30s preview playback** — every song/album chip has a ▶ button that plays a free 30-second Apple snippet before you download.
+- **💬 In-player synced lyrics** — the player bar's 💬 button (or **L**) opens a lyrics panel showing the track's `.lrc` sidecar with the current line highlighted and auto-scrolled; it follows track changes and seeking. Fetch missing lyrics with the Library's 💬 Lyrics button (LRCLIB, free).
+- **🕘 Play tracking** — pressing play records `play_count` + `last_played` in the SQLite ledger; the Library's **Recent** button lists your most-played/last-played tracks with one-click replay.
+- **🔄 Album format conversion** — every album row converts to **FLAC / MP3 320k / Opus 192k / AAC 256k / OGG q6** with originals always kept; runs as a background task.
+- **🖼 Cover viewer & replace** — album rows show the current embedded art and accept a replacement image, written into every track in the folder.
+- **🔍 Track-level search** — the Library search box also matches individual track titles/file names, with playable hits listed above the artist tree.
+- **⤓ Library index export** — the full track listing as **CSV** or a self-contained **HTML** page (artist / album / track / title / codec / size / path).
+- **🎵 .m3u playlist import** — the Import panel matches an .m3u file against your library and saves a playlist (missing entries reported).
+- **🌓 Light / dark theme** — one-click toggle in the header (or **T**), remembered across sessions.
 - **🧠 MusicBrainz auto-tagging** — per-album + whole-library task that fixes titles/artists/albums from the MusicBrainz database (duration-matched, rate-limit safe).
 - **Tag editor** — ✎ on any album row: per-track editor (title / artist / album / album artist / track / year) that writes tags straight into the files with mutagen.
 - **Smart duplicate finder** — 🎧 matches files by *audio fingerprint* (first 15s decoded to PCM), so the same song with different filenames or containers (ALAC vs FLAC) is caught.

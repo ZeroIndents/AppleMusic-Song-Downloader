@@ -41,8 +41,16 @@ from downloader import (
     artist_discography,
     catalog_search,
     delete_empty_dirs,
+    convert_album_to_format,
+    export_library_index,
     export_library_m3u,
     export_smart_playlist,
+    import_m3u_playlist,
+    ledger_play,
+    ledger_recent_plays,
+    read_lyrics_sidecar,
+    search_tracks,
+    write_album_cover,
     find_empty_dirs,
     generate_cue_sheet,
     ledger_owned_count,
@@ -96,7 +104,7 @@ PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
 # Keep in lockstep with the CHANGELOG heading (e.g. "[1.0.0] - 2026-08-09")
 # when cutting the next release.
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 LOG_DIR = PROJECT_DIR / "logs"
 # static/index.html is a bundled read-only resource — in a PyInstaller binary
 # it lives in the _MEIPASS dir, in source mode next to the app.
@@ -141,7 +149,7 @@ config = Config()
 manager = JobManager(config)
 
 app = Flask(__name__, static_folder=None)
-app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # 1 MB request cap
+app.config["MAX_CONTENT_LENGTH"] = 16_000_000  # 16 MB request cap (cover uploads are base64 — a few MB raw image becomes a few MB of JSON)
 
 
 @app.before_request
@@ -288,9 +296,43 @@ def pwa_icons(name: str):
 # ----------------------------------------------------------------------
 # Status + config
 # ----------------------------------------------------------------------
+_WRAPPER_OK_CACHE: dict = {"value": False, "at": 0.0}
+
+
+def _wrapper_ok() -> bool:
+    """Is the active Apple wrapper genuinely ready for ALAC/Atmos?
+
+    Cached for 3s — /api/status is polled constantly and a wrapper HTTP call
+    per poll would stall the UI when the wrapper is slow/unresponsive.
+    Semantics per engine: gamdl wrapper is ready when reachable AND logged in
+    (auth_state == "authenticated"); the amdl wrapper is ready when its
+    container state is "running". Mirrors api_onboarding's definition.
+    """
+    import time as _t
+    now = _t.time()
+    if now - _WRAPPER_OK_CACHE["at"] < 3.0:
+        return _WRAPPER_OK_CACHE["value"]
+    ok = False
+    if _amdl_mode():
+        try:
+            ok = wrapperctl.amdl_wrapper_status().get("state") == "running"
+        except Exception:
+            ok = False
+    else:
+        try:
+            w = wrapperctl.wrapper_status()
+            ok = bool(w.get("reachable") and w.get("auth_state") == "authenticated")
+        except Exception:
+            ok = False
+    _WRAPPER_OK_CACHE["value"] = ok
+    _WRAPPER_OK_CACHE["at"] = now
+    return ok
+
+
 @app.get("/api/status")
 def api_status():
     cookies_path = resolve_cookies_path(config)
+    wrapper_auth = _wrapper_ok()
     return jsonify({
         "gamdl": gamdl_version(),
         "gamdl_found": gamdl_binary() is not None,
@@ -310,6 +352,7 @@ def api_status():
         "cookies_path": cookies_path,
         "output_path": expand_path(config.get("output_path")),
         "wrapper_enabled": bool(config.get("use_wrapper")),
+        "wrapper_ok": wrapper_auth,
         "wrapper_url": config.get("wrapper_url"),
         "codec": config.get("song_codec_priority"),
         "convert_to_flac": bool(config.get("convert_to_flac")),
@@ -1127,14 +1170,39 @@ def api_library_restore():
     # malformed backup can't write garbage into config.json, and batch it into
     # a single file write. The access token is never restored.
     normalized = {}
+    skipped: list[str] = []
     for k, v in incoming.items():
-        if k in config.data and k != "remote_token":
-            nv = _normalize_config_value(k, v)
-            if nv is not None:
-                normalized[k] = nv
+        if k not in config.data or k == "remote_token":
+            continue
+        nv = _normalize_config_value(k, v)
+        if nv is None:
+            skipped.append(k)
+            continue
+        # Guard the output folder: restoring a backup made on another machine
+        # (or with a deleted/stale path) would silently empty the Library view
+        # and point every download at a dead folder. Accept the path only when
+        # it already exists or its parent does (so it can be created).
+        if k == "output_path":
+            try:
+                probe = Path(os.path.expanduser(str(nv))).resolve()
+            except OSError:
+                skipped.append(k)
+                continue
+            # Must already be a folder, or sit under a real folder so it can
+            # be created (reject /etc/passwd/foo-style paths where the
+            # "parent" is a file).
+            if probe.is_dir() or probe.parent.is_dir():
+                pass
+            else:
+                skipped.append(k)
+                continue
+        normalized[k] = nv
     changes = config.update(normalized)
     _restart_watcher_if_needed()
-    return jsonify({"ok": True, "applied": list(changes.keys()), "count": len(changes)})
+    resp = {"ok": True, "applied": list(changes.keys()), "count": len(changes)}
+    if skipped:
+        resp["skipped"] = skipped
+    return jsonify(resp)
 
 
 @app.post("/api/library/musicbrainz")
@@ -1157,6 +1225,170 @@ def api_library_musicbrainz():
         return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
     tid = _start_task("musicbrainz", musicbrainz_fix_album, target)
     return jsonify({"ok": True, "task": tid})
+
+
+@app.get("/api/library/tracks")
+def api_library_tracks():
+    """Track-level search: ?q= matches titles/file names (not just
+    artist/album). Returns flat matches with album/artist paths."""
+    q = str(request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Missing ?q= search term."}), 400
+    try:
+        hits = search_tracks(expand_path(config.get("output_path")), q)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "tracks": hits, "count": len(hits)})
+
+
+@app.post("/api/library/convert")
+def api_library_convert():
+    """Convert every audio file in one album folder to flac/mp3/opus/aac/ogg
+    as a background task (originals kept). Body: {path, codec, overwrite}."""
+    body = request.get_json(silent=True) or {}
+    raw = str(body.get("path") or "").strip()
+    codec = str(body.get("codec") or "flac").strip().lower()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing album path."}), 400
+    target = _resolve_album_path(raw)
+    if target is None:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    if not target.is_dir():
+        return jsonify({"ok": False, "error": "That album folder no longer exists."}), 404
+    tid = _start_task("convert", convert_album_to_format, target,
+                      codec, bool(body.get("overwrite")))
+    return jsonify({"ok": True, "task": tid, "codec": codec})
+
+
+@app.get("/api/lyrics")
+def api_lyrics():
+    """The .lrc lyrics sidecar of a library audio file, if present."""
+    raw = str(request.args.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing ?path= parameter."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(raw)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    text = read_lyrics_sidecar(target)
+    if text is None:
+        return jsonify({"ok": False, "error": "No .lrc lyrics next to that file."}), 404
+    return jsonify({"ok": True, "lyrics": text})
+
+
+@app.get("/api/library/album/cover")
+def api_library_album_cover():
+    """Current embedded cover of an album (first audio file) — for the cover
+    viewer modal."""
+    raw = str(request.args.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing ?path= parameter."}), 400
+    target = _resolve_album_path(raw)
+    if target is None or not target.is_dir():
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    files = list_album_files(target)
+    if not files:
+        return jsonify({"ok": False, "error": "No audio files in that folder."}), 404
+    # Some tracks in an album may lack embedded art — try them all before
+    # giving up, so a cover is shown whenever any track has one.
+    art = None
+    for f in files:
+        art = read_cover_art(Path(f["path"]))
+        if art:
+            break
+    if not art:
+        return jsonify({"ok": False, "error": "No embedded cover art."}), 404
+    data, mime = art
+    from flask import Response as _Resp
+    resp = _Resp(data, mimetype=mime)
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
+@app.post("/api/library/album/cover")
+def api_library_album_cover_set():
+    """Replace the cover of an album with an uploaded image. Body: {path,
+    data: base64, mime}. Written into every audio file in the folder."""
+    import base64 as _b64
+    body = request.get_json(silent=True) or {}
+    raw = str(body.get("path") or "").strip()
+    b64 = str(body.get("data") or "").strip()
+    if not raw or not b64:
+        return jsonify({"ok": False, "error": "Missing album path or image data."}), 400
+    target = _resolve_album_path(raw)
+    if target is None or not target.is_dir():
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    try:
+        data = _b64.b64decode(b64, validate=True)
+    except Exception:
+        return jsonify({"ok": False, "error": "Image data is not valid base64."}), 400
+    if len(data) > 15_000_000:
+        return jsonify({"ok": False, "error": "Image too large (max 15 MB)."}), 400
+    mime = str(body.get("mime") or "image/jpeg").strip()
+    if not mime.startswith("image/"):
+        mime = "image/jpeg"
+    result = write_album_cover(target, data, mime)
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error", "Cover write failed.")}), 400
+    return jsonify({"ok": True, **result})
+
+
+@app.post("/api/ledger/play")
+def api_ledger_play():
+    """Record a play (play_count + last_played) for one library file."""
+    body = request.get_json(silent=True) or {}
+    path = str(body.get("path") or "").strip()
+    if not path:
+        return jsonify({"ok": False, "error": "Missing file path."}), 400
+    ok = ledger_play(expand_path(config.get("output_path")), path)
+    return jsonify({"ok": ok}), (200 if ok else 400)
+
+
+@app.get("/api/library/recent")
+def api_library_recent():
+    """Most recently played tracks (from the ledger's play tracking)."""
+    try:
+        recent = ledger_recent_plays(expand_path(config.get("output_path")))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "recent": recent})
+
+
+@app.get("/api/library/index")
+def api_library_index():
+    """Export a full library track index as CSV (?fmt=csv) or an HTML page
+    (?fmt=html) — for spreadsheets, archiving, or sharing."""
+    fmt = str(request.args.get("fmt") or "csv").lower()
+    if fmt not in ("csv", "html"):
+        return jsonify({"ok": False, "error": "fmt must be 'csv' or 'html'."}), 400
+    from flask import Response as _Resp
+    from urllib.parse import quote as _quote
+    try:
+        content, fname = export_library_index(expand_path(config.get("output_path")), fmt)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    resp = _Resp(content, mimetype="text/html; charset=utf-8" if fmt == "html" else "text/csv; charset=utf-8")
+    resp.headers["Content-Disposition"] = f"attachment; filename={_quote(fname)}"
+    return resp
+
+
+@app.post("/api/library/m3u-import")
+def api_library_m3u_import():
+    """Import an .m3u playlist file: entries are resolved against the output
+    folder, only existing library tracks are kept, and the playlist is saved
+    to Playlists/{artist}/{name}.m3u. Body: {name, content, artist}."""
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name") or "").strip()
+    content = str(body.get("content") or "")
+    if not content.strip():
+        return jsonify({"ok": False, "error": "Empty .m3u content."}), 400
+    result = import_m3u_playlist(expand_path(config.get("output_path")),
+                                 name, content, str(body.get("artist") or "Imported"))
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error", "Import failed.")}), 400
+    return jsonify({"ok": True, **result})
 
 
 @app.post("/api/jobs/pause")
@@ -1508,14 +1740,19 @@ def api_library_open():
                 subprocess.Popen(["explorer", str(target)])
             else:
                 subprocess.Popen(["explorer", "/select,", str(target)])
-        else:
+        elif sys.platform == "darwin":
             # macOS Finder: -R reveals the item in a window; folders plain `open`.
             if target.is_dir():
                 subprocess.Popen(["open", str(target)])
             else:
                 subprocess.Popen(["open", "-R", str(target)])
+        else:
+            # Linux: xdg-open opens the folder in the default file manager.
+            # (No reveal-and-select equivalent; opening the folder is enough.)
+            subprocess.Popen(["xdg-open", str(target)])
     except OSError as e:
-        return jsonify({"ok": False, "error": f"Could not open the file manager: {e}"}), 500
+        hint = " (install xdg-utils — e.g. apt install xdg-utils)" if sys.platform.startswith("linux") else ""
+        return jsonify({"ok": False, "error": f"Could not open the file manager: {e}{hint}"}), 500
     return jsonify({"ok": True})
 
 
@@ -1540,6 +1777,13 @@ def api_download():
         for k in ("codec", "output_path", "cookies_path", "use_wrapper", "wrapper_url", "overwrite")
         if k in body
     }
+    # Dolby Atmos (and pure ALAC) can ONLY come from the wrapper — there is no
+    # lossy fallback gamdl can use. Force the wrapper flag on so picking Atmos
+    # always routes through it; run_job then preflights reachability/auth and
+    # fails fast with a clear message instead of a cryptic gamdl license error.
+    codec_choice = str(options.get("codec") or config.get("song_codec_priority") or "")
+    if codec_choice == "atmos" or codec_choice == "alac":
+        options["use_wrapper"] = True
     # Ledger-driven delta sync: for Spotify/YouTube album+playlist links, drop
     # the tracks the SQLite ledger already owns before anything is queued. The
     # skipped count rides along so the UI can report it. Apple links pass

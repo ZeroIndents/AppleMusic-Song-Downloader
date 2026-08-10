@@ -39,6 +39,62 @@ if ("serviceWorker" in navigator) {
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     --grad: linear-gradient(135deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
   }
+  /* Light theme: the whole app is driven by CSS variables, so one block of
+     overrides (on <html data-theme="light">) flips the palette. Toggle lives
+     in the header (🌓) and the choice persists in localStorage. */
+  [data-theme="light"] {
+    --bg: #f2f2f7;
+    --bg-2: #e8e8ee;
+    --panel: rgba(0,0,0,.045);
+    --panel-2: rgba(0,0,0,.07);
+    --border: rgba(0,0,0,.13);
+    --text: #1c1c1e;
+    --muted: #6e6e73;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  [data-theme="light"] body {
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(94,92,230,.14), transparent 60%),
+      radial-gradient(900px 500px at -10% 0%, rgba(250,45,72,.1), transparent 55%),
+      var(--bg);
+  }
+  [data-theme="light"] header { background: rgba(242,242,247,.85); }
+  [data-theme="light"] textarea,
+  [data-theme="light"] input[type=text], [data-theme="light"] input[type=password],
+  [data-theme="light"] input[type=number], [data-theme="light"] select {
+    background: rgba(255,255,255,.6); color: var(--text);
+  }
+  [data-theme="light"] textarea::placeholder { color: #9a9aa2; }
+  [data-theme="light"] .seg { background: rgba(0,0,0,.07); }
+  [data-theme="light"] .job-log,
+  [data-theme="light"] .stat-card,
+  [data-theme="light"] .lib-artist,
+  [data-theme="light"] .mig-row,
+  [data-theme="light"] .w-banner,
+  [data-theme="light"] .ob-row,
+  [data-theme="light"] .lib-playlist,
+  [data-theme="light"] #cat-results > div > div { background: rgba(255,255,255,.55); }
+  [data-theme="light"] .job-log .lvl-INFO { color: #3c3c43; }
+  [data-theme="light"] .job-log .ts { color: #9a9aa2; }
+  [data-theme="light"] .job-log .lvl { color: #6e6e73; }
+  [data-theme="light"] .modal,
+  [data-theme="light"] .drawer { background: #f7f7fa; }
+  [data-theme="light"] #player-bar { background: rgba(246,246,250,.94); }
+  [data-theme="light"] .toast { background: #f2f2f7; }
+  [data-theme="light"] .pb-btn { background: rgba(0,0,0,.08); color: var(--text); }
+  [data-theme="light"] .pb-btn:hover { background: rgba(0,0,0,.14); }
+  [data-theme="light"] .code-row input { background: rgba(255,255,255,.6); color: var(--text); }
+  [data-theme="light"] .hint code { background: rgba(0,0,0,.07); color: var(--muted); }
+  /* Light theme: white-ish track/bar backgrounds vanish on light cards — give
+     the sliders and progress bars dark translucent tracks instead. */
+  [data-theme="light"] .pb-track { background: rgba(0,0,0,.14); }
+  [data-theme="light"] .job-progress { background: rgba(0,0,0,.1); }
+  [data-theme="light"] .stat-bar-track { background: rgba(0,0,0,.1); }
+  [data-theme="light"] .job-progress-fill, [data-theme="light"] .stat-bar-fill { background: var(--grad); }
+  [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.22); border-color: transparent; }
+  [data-theme="light"] .modal-back { background: rgba(0,0,0,.35); }
+  [data-theme="light"] .url-chip.dim { color: var(--muted); }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
@@ -518,6 +574,28 @@ if ("serviceWorker" in navigator) {
   .lib-playlist .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
   /* ---------- in-app player bar ---------- */
+  #lyrics-panel {
+    position: fixed; bottom: 66px; right: 18px; z-index: 39;
+    width: min(360px, calc(100vw - 36px)); max-height: 46vh;
+    background: rgba(16,16,26,.96); backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid var(--border); border-radius: 14px;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    animation: rise .25s ease both;
+  }
+  [data-theme="light"] #lyrics-panel { background: rgba(247,247,250,.97); }
+  .lyr-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px 6px; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  }
+  .lyr-body {
+    overflow-y: auto; padding: 4px 14px 14px; font-size: 14px; line-height: 1.75;
+    text-align: center;
+  }
+  .lyr-body .lyr-line { color: var(--muted); transition: color .18s ease, transform .18s ease; }
+  .lyr-body .lyr-line.cur { color: var(--text); font-weight: 700; transform: scale(1.04); }
+  .lyr-empty { color: var(--muted); font-size: 12.5px; padding: 14px 0; }
   #player-bar {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
     background: rgba(16,16,26,.92); backdrop-filter: blur(20px) saturate(1.4);
@@ -680,6 +758,7 @@ if ("serviceWorker" in navigator) {
       <div class="pill" id="pill-flac"><span class="dot"></span>Auto-FLAC</div>
       <div class="pill click" id="pill-setup" title="Setup checklist — click to open"><span class="dot"></span>Setup <span class="val">…</span></div>
       <div class="pill click" id="pill-install" style="display:none" title="Install Music High Res as an app">📲 Install</div>
+      <div class="pill click" id="pill-theme" title="Toggle light/dark theme (keyboard: t)">🌓</div>
     </div>
   </header>
 
@@ -743,7 +822,9 @@ if ("serviceWorker" in navigator) {
       <button class="btn ghost small" id="btn-lib-empty" title="Find and delete empty folders">🗑 Empty dirs</button>
       <button class="btn ghost small" id="btn-lib-logs" title="View app and launcher logs">📜 Logs</button>
       <button class="btn ghost small" id="btn-lib-scan" title="Trigger a scan on your media server now">📡 Scan now</button>
-      <button class="btn ghost small" id="btn-lib-import" title="Import an Apple Music library.xml">📥 Import</button>
+      <button class="btn ghost small" id="btn-lib-recent" title="Recently played tracks (play tracking)">🕘 Recent</button>
+      <button class="btn ghost small" id="btn-lib-import" title="Import an Apple Music library.xml or an .m3u playlist">📥 Import</button>
+      <button class="btn ghost small" id="btn-lib-index" title="Export the whole library as CSV or an HTML page">⤓ Index</button>
       <button class="btn ghost small" id="btn-lib-export" title="Download a JSON backup">⬇ Backup</button>
     </div>
     <div id="bulk-bar" style="display:none; align-items:center; gap:10px; margin-bottom:10px; background:rgba(175,82,222,.1); border:1px solid rgba(175,82,222,.35); border-radius:10px; padding:8px 12px; font-size:12.5px">
@@ -1237,6 +1318,7 @@ if ("serviceWorker" in navigator) {
         <button class="pb-btn" id="pb-prev" title="Previous">⏮</button>
         <button class="pb-btn play" id="pb-toggle" title="Play/Pause">▶</button>
         <button class="pb-btn" id="pb-next" title="Next">⏭</button>
+        <button class="pb-btn" id="pb-lyrics" title="Toggle synced lyrics (.lrc) — keyboard: l">💬</button>
       </div>
       <div class="pb-progress">
         <span class="pb-time" id="pb-cur">0:00</span>
@@ -1248,6 +1330,10 @@ if ("serviceWorker" in navigator) {
         <span>🔊</span>
         <input type="range" class="pb-track" id="pb-vol" min="0" max="100" value="80">
       </div>
+    </div>
+    <div id="lyrics-panel" style="display:none">
+      <div class="lyr-head"><span>💬 Lyrics</span><button class="pb-btn" id="lyr-close" title="Close lyrics" style="width:26px;height:26px;font-size:12px">✕</button></div>
+      <div id="lyr-body" class="lyr-body"><div class="lyr-empty">No .lrc sidecar for this track — run 💬 Lyrics in the Library to fetch them.</div></div>
     </div>
     Requires an active Apple Music subscription.<br>
     Lossless ALAC needs the <code>wrapper-v2</code> server (see <code>README.md</code> / <code>setup_wrapper.sh</code>) — until then downloads fall back to AAC 256kbps.
@@ -1529,6 +1615,7 @@ function playTrack(track, queue) {
   }
   player.queue = queue || [];
   player.index = (queue || []).findIndex(t => t.path === track.path);
+  player.current = track;  // lyrics panel + cover refresh read this
   player.transcode = trackNeedsTranscode(track.codec);
   player.autoAdvanced = false;
   player.errStreak = 0;
@@ -1548,6 +1635,17 @@ function playTrack(track, queue) {
   preloadNext();
   $("player-bar").classList.add("show");
   player.audio.play().catch(() => {});
+  // Play tracking: record play_count + last_played in the SQLite ledger.
+  if (track.path) {
+    try {
+      fetch("/api/ledger/play", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: track.path }),
+      }).catch(() => {});
+    } catch (e) { /* fire-and-forget */ }
+  }
+  // Lyrics: auto-load the .lrc sidecar for the new track.
+  if (track.path && $("lyrics-panel").style.display !== "none") loadLyrics(track.path);
 }
 
 function playerToggle() {
@@ -2305,7 +2403,9 @@ function renderLibrary(d) {
         ${al.quality ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)" title="Best audio quality found">${escapeHtml(al.quality)}</span>` : ""}
         ${al.added ? `<span class="badge" title="Added to your library">📅 ${fmtDate(al.added)}</span>` : ""}
         <span class="cnt">${al.track_count} · ${fmtBytes(al.size_bytes)}</span>
+        <button class="link-btn" data-coverview="${encodeURIComponent(al.path)}" title="View or replace this album's cover art">🖼</button>
         <button class="link-btn" data-cover="${encodeURIComponent(al.path)}" title="Re-fetch this album's cover at high resolution">📷</button>
+        <button class="link-btn" data-convert="${encodeURIComponent(al.path)}" title="Convert this album to FLAC/MP3/Opus/AAC/OGG">🔄</button>
         <button class="link-btn" data-source="${encodeURIComponent(al.path)}" title="Open on Apple Music">🔗</button>
         <button class="link-btn" data-cue="${encodeURIComponent(al.path)}" title="Generate a .cue sheet">📼</button>
         <button class="link-btn" data-m3u="${encodeURIComponent(al.path)}" title="Export this album as .m3u">⤓</button>
@@ -2338,6 +2438,14 @@ function renderLibrary(d) {
   // Hi-res cover upgrade (runs as a background task, result toasted).
   root.querySelectorAll("[data-cover]").forEach(btn => {
     btn.addEventListener("click", () => upgradeCover(decodeURIComponent(btn.dataset.cover)));
+  });
+  // Cover viewer + replace.
+  root.querySelectorAll("[data-coverview]").forEach(btn => {
+    btn.addEventListener("click", () => showCoverViewer(decodeURIComponent(btn.dataset.coverview)));
+  });
+  // Album format conversion.
+  root.querySelectorAll("[data-convert]").forEach(btn => {
+    btn.addEventListener("click", () => showConvertModal(decodeURIComponent(btn.dataset.convert)));
   });
   // 'Open on Apple Music' — the source URL is fetched lazily from the ledger.
   root.querySelectorAll("[data-source]").forEach(btn => {
@@ -2843,6 +2951,21 @@ async function showImportPanel() {
     <div id="libxml-result" style="margin-top:10px"></div>
     <div class="hint">Tracks are matched against the Apple Music catalog (iTunes Search API, same as the Migrate panel) — matched ones are ready to download as one batch.</div>
   </div>
+  <div class="lib-group" style="margin-top:16px"><h3>🎵 Import .m3u playlist</h3>
+    <div class="row" style="margin-top:0">
+      <div class="field" style="flex:1;min-width:200px">
+        <label>Playlist name</label>
+        <input type="text" id="f-m3u-name" placeholder="My Road Trip">
+      </div>
+      <div class="field" style="flex:1;min-width:200px">
+        <label>Artist / folder</label>
+        <input type="text" id="f-m3u-artist" placeholder="Imported">
+      </div>
+      <input type="file" id="f-m3u-file" accept=".m3u,.m3u8,audio/x-mpegurl" style="flex:1; min-width:200px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 12px; font-size:12.5px">
+      <button class="btn ghost small" id="btn-m3u-import" style="align-self:flex-end">⬆ Import</button>
+    </div>
+    <div id="m3u-result" class="hint" style="margin-top:8px">Pick an .m3u exported from another app — its entries are matched against files already in your library, and a new playlist appears under <code>Playlists/{artist}/{name}.m3u</code>.</div>
+  </div>
   <div class="lib-group" style="margin-top:16px"><h3>♻ Restore settings from backup</h3>
     <div class="row" style="margin-top:0">
       <input type="file" id="f-restore" accept=".json,application/json" style="flex:1; min-width:220px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 12px; font-size:12.5px">
@@ -2850,6 +2973,31 @@ async function showImportPanel() {
     </div>
     <div id="restore-result" class="hint" style="margin-top:8px">Pick the <code>music-high-res-backup.json</code> you exported earlier — its config (output folder, quality, engines, server presets…) is applied. The library index part is informational.</div>
   </div>`;
+  // .m3u playlist import.
+  $("btn-m3u-import").addEventListener("click", () => {
+    const file = $("f-m3u-file").files[0];
+    const name = $("f-m3u-name").value.trim();
+    if (!file) { toast("Pick an .m3u file first.", "err"); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const btn = $("btn-m3u-import"); btn.disabled = true; btn.textContent = "Importing…";
+      try {
+        const res = await fetch("/api/library/m3u-import", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, content: String(reader.result), artist: $("f-m3u-artist").value.trim() }),
+        });
+        const d = await res.json();
+        if (!d.ok) { toast(d.error || "Import failed.", "err"); return; }
+        const miss = d.missing ? ` (${d.missing} entries not found)` : "";
+        $("m3u-result").textContent = `Imported ${d.matched} track(s)${miss} → ${d.written || ""}`;
+        $("m3u-result").style.color = "var(--ok)";
+        toast(`Playlist “${d.name || name}” imported (${d.matched} tracks) ✓`, "ok");
+        refreshLibrary();
+      } catch (e) { toast("Network error: " + e.message, "err"); }
+      finally { btn.disabled = false; btn.textContent = "⬆ Import"; }
+    };
+    reader.readAsText(file, "utf-8");
+  });
   $("btn-libxml-preview").addEventListener("click", async () => {
     const path = $("f-libxml").value.trim();
     const playlist = $("f-libxml-playlist").value.trim();
@@ -3190,11 +3338,16 @@ async function download() {
   const btn = $("btn-download");
   btn.disabled = true;
   $("btn-label").textContent = "Starting…";
+  // Atmos/pure-ALAC always go through the wrapper — send use_wrapper so the
+  // backend routes them there even if the Settings toggle is off (the backend
+  // preflights reachability + auth and fails fast if not ready).
+  const codec = currentCodec();
+  const needsWrapper = codec === "atmos" || codec === "alac";
   try {
     const res = await fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls, codec: currentCodec(), overwrite: $("f-overwrite").checked, delta: state.config && !!state.config.delta_sync }),
+      body: JSON.stringify({ urls, codec, use_wrapper: needsWrapper || undefined, overwrite: $("f-overwrite").checked, delta: state.config && !!state.config.delta_sync }),
     });
     const data = await res.json();
     if (!data.ok) { toast(data.error || "Download failed to start.", "err"); return; }
@@ -3756,7 +3909,10 @@ async function showCatalogSearch() {
             ${r.kind !== "artist" && r.owned ? `<span class="badge" style="color:var(--ok);border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.1)" title="Already in your library">✓ owned ${r.owned}</span>` : ""}
             ${r.kind === "artist"
               ? `<button class="btn ghost small" data-disc="${i}" title="List this artist's albums">📀 Discography</button>`
-              : `<button class="btn ghost small" data-add="${i}" title="Add to the download list">+ Add</button>`}
+              : `${r.kind === "song"
+                  ? `<button class="btn ghost small" data-add="${i}" title="Add to the download list">+ Add</button>
+                     <button class="btn ghost small" data-dl="${i}" title="Download this song now">⬇ Download</button>`
+                  : `<button class="btn ghost small" data-add="${i}" title="Add to the download list">+ Add</button>`}`}
             <button class="link-btn" data-star="${i}" title="Save to wishlist">⭐</button>
           </div>
           <div id="cat-disc-${i}" style="display:none; margin:6px 0 2px 50px; flex-direction:column; gap:6px"></div>
@@ -3768,6 +3924,23 @@ async function showCatalogSearch() {
         box.focus();
         toast(`Added “${r.name}” to the download list ✓`, "ok");
         scheduleUrlPreview();
+      }));
+      // Per-track instant download (song entity only).
+      resultsEl.querySelectorAll("[data-dl]").forEach(b => b.addEventListener("click", async () => {
+        const r = lastResults[+b.dataset.dl];
+        if (!r || !r.url) { toast("No URL for that song.", "err"); return; }
+        const old = b.textContent; b.disabled = true; b.textContent = "Queuing…";
+        try {
+          const res = await fetch("/api/download", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls: [r.url], overwrite: $("f-overwrite").checked }),
+          });
+          const d = await res.json();
+          if (!d.ok) { toast(d.error || "Could not queue the download.", "err"); return; }
+          toast(`Queued “${r.name}” ✓`, "ok");
+          await refreshJobs();
+        } catch (e) { toast("Network error: " + e.message, "err"); }
+        finally { b.disabled = false; b.textContent = old; }
       }));
       resultsEl.querySelectorAll("[data-disc]").forEach(b => b.addEventListener("click", async () => {
         const r = lastResults[+b.dataset.disc];
@@ -3849,8 +4022,291 @@ async function showCatalogSearch() {
   setTimeout(() => $("cat-q").focus(), 60);
 }
 
+/* ---------------- 🌓 theme toggle ---------------- */
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("mhr-theme", theme); } catch (e) {}
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") || "dark";
+  applyTheme(cur === "dark" ? "light" : "dark");
+}
+
+/* ---------------- 🕘 recent plays ---------------- */
+async function showRecentPlays() {
+  const box = $("lib-extra");
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Loading recent plays…</div>`;
+  try {
+    const res = await fetch("/api/library/recent");
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Could not load.")}</div>`; return; }
+    const rows = (data.recent || []).map(r =>
+      `<div class="lib-playlist" style="cursor:pointer" data-path="${encodeURIComponent(r.path)}" data-codec="${escapeHtml(r.codec || "")}" title="Play: ${escapeHtml(r.name)}">
+        <span>▶ ${escapeHtml(r.rel)}</span>
+        <span class="cnt">${r.play_count}× · ${fmtDate(r.last_played)}</span>
+      </div>`
+    ).join("");
+    box.innerHTML = rows ? `<div class="lib-group"><h3>🕘 Recently played</h3>${rows}
+      <div class="hint">Play tracking is recorded when you press play in the in-app player. Replays increment the count. Click a row to play it.</div></div>`
+      : `<div class="lib-empty">Nothing played yet — play something in the in-app player and it shows up here.</div>`;
+    box.querySelectorAll(".lib-playlist").forEach(el => {
+      el.addEventListener("click", async () => {
+        const raw = el.getAttribute("data-path") || "";
+        if (!raw) return;
+        const path = decodeURIComponent(raw);
+        const nxt = path.split("/").pop() || path.split("\\").pop() || "";
+        // Pass the ledger codec so ALAC files still get transcoded for
+        // browsers that can't decode them (codec="" would skip it).
+        const codec = el.getAttribute("data-codec") || "";
+        playTrack({ path, title: nxt.replace(/\.[^.]+$/, ""), artist: "", album: "", codec, duration: 0 }, null);
+      });
+    });
+  } catch (e) { box.innerHTML = `<div class="lib-empty">${escapeHtml(e.message)}</div>`; }
+}
+
+/* ---------------- ⤓ library index export ---------------- */
+function showIndexExport() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:420px">
+    <h3>⤓ Export library index</h3>
+    <div class="muted-sm">A complete track listing (artist / album / title / codec / size / path) as a spreadsheet-friendly CSV or a self-contained HTML page.</div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="idx-csv">Download CSV</button>
+      <button class="btn ghost small" id="idx-html">Download HTML page</button>
+      <button class="btn ghost small" id="idx-close">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const dl = fmt => {
+    const a = document.createElement("a");
+    a.href = tokUrl("/api/library/index?fmt=" + fmt);
+    a.download = "";
+    a.click();
+    toast("Exporting library index…", "ok");
+  };
+  $("idx-csv").addEventListener("click", () => dl("csv"));
+  $("idx-html").addEventListener("click", () => dl("html"));
+  $("idx-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+}
+
+/* ---------------- 🔄 album format conversion ---------------- */
+function showConvertModal(albumPath) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:420px">
+    <h3>🔄 Convert album</h3>
+    <div class="muted-sm">Convert every track to one format. Originals are always kept (a .flac appears next to the .m4a, etc.). Runs in the background.</div>
+    <div class="field">
+      <label for="conv-codec">Target format</label>
+      <select id="conv-codec">
+        <option value="flac">FLAC (lossless)</option>
+        <option value="mp3">MP3 320k</option>
+        <option value="opus">Opus 192k</option>
+        <option value="aac">AAC 256k (.m4a)</option>
+        <option value="ogg">OGG Vorbis q6</option>
+      </select>
+    </div>
+    <label class="toggle" style="margin-top:4px">
+      <input type="checkbox" id="conv-overwrite"><span class="switch"></span>Overwrite existing target files
+    </label>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="conv-cancel">Cancel</button>
+      <button class="btn small" id="conv-go">Convert</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  $("conv-cancel").addEventListener("click", close);
+  back.addEventListener("click", e => { if (e.target === back) close(); });
+  $("conv-go").addEventListener("click", async () => {
+    const codec = $("conv-codec").value;
+    const overwrite = $("conv-overwrite").checked;
+    close();
+    startLibraryTask("/api/library/convert",
+      { path: albumPath, codec, overwrite },
+      `Convert → ${codec.toUpperCase()}`,
+      r => `Converted ${r.converted ?? 0} track(s) to ${(r.codec || codec).toUpperCase()}${r.errors ? ` (${r.errors} error${r.errors === 1 ? "" : "s"})` : ""} ✓`);
+  });
+}
+
+/* ---------------- 🖼 cover viewer + replace ---------------- */
+async function showCoverViewer(albumPath) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:360px">
+    <h3>🖼 Album cover</h3>
+    <div style="display:grid; place-items:center; margin:12px 0">
+      <img id="cv-img" src="${tokUrl("/api/library/album/cover?path=" + encodeURIComponent(albumPath))}" alt="" style="width:220px; height:220px; object-fit:cover; border-radius:12px; border:1px solid var(--border)" onerror="this.outerHTML='<div class=lib-empty style=padding:40px>No embedded cover art</div>'">
+    </div>
+    <div class="field">
+      <label>Replace with your own image</label>
+      <input type="file" id="cv-file" accept="image/*">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="cv-close">Close</button>
+      <button class="btn small" id="cv-go">⬆ Replace cover</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  $("cv-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  $("cv-go").addEventListener("click", async () => {
+    const file = $("cv-file").files[0];
+    if (!file) { toast("Pick an image first.", "err"); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = String(reader.result).split(",")[1] || "";
+      const btn = $("cv-go"); btn.disabled = true; btn.textContent = "Writing…";
+      try {
+        const res = await fetch("/api/library/album/cover", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: albumPath, data: b64, mime: file.type || "image/jpeg" }),
+        });
+        const d = await res.json();
+        if (!d.ok) { toast(d.error || "Cover write failed.", "err"); btn.disabled = false; btn.textContent = "⬆ Replace cover"; return; }
+        toast(d.message || "Cover replaced ✓", "ok");
+        back.remove();
+        // Refresh the player art if the current track lives in this album.
+        if (player && player.current && player.current.path) {
+          const img = document.querySelector(".pb-art img");
+          if (img) img.src = tokUrl("/api/art?path=" + encodeURIComponent(player.current.path)) + "&t=" + Date.now();
+        }
+      } catch (e) { toast("Network error: " + e.message, "err"); btn.disabled = false; btn.textContent = "⬆ Replace cover"; }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------------- 💬 lyrics (player panel) ---------------- */
+let lyricsData = null;   // {lines: [{t, text}], plain: bool}
+let lyricsTimer = null;
+async function loadLyrics(path) {
+  const panel = $("lyrics-panel");
+  const body = $("lyr-body");
+  lyricsData = null;
+  if (panel) panel.style.display = "flex";
+  try {
+    const res = await fetch("/api/lyrics?path=" + encodeURIComponent(path));
+    const d = await res.json();
+    if (!d.ok || !d.lyrics) {
+    body.innerHTML = `<div class="lyr-empty">No .lrc sidecar for this track — run 💬 Lyrics in the Library to fetch them.</div>`;
+    return;
+  }  lyricsData = parseLrc(d.lyrics);
+  renderLyrics();
+  } catch (e) {
+    body.innerHTML = `<div class="lyr-empty">Could not load lyrics: ${escapeHtml(e.message)}</div>`;
+  }
+}
+function parseLrc(text) {
+  const lines = [];
+  let plain = true;
+  const re = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+  for (const raw of text.split(/\r?\n/)) {
+    const ts = [];
+    let m, rest = raw;
+    re.lastIndex = 0;
+    while ((m = re.exec(raw))) {
+      const min = parseInt(m[1], 10), sec = parseInt(m[2], 10);
+      const frac = m[3] ? parseInt(m[3].padEnd(3, "0"), 10) / 1000 : 0;
+      ts.push(min * 60 + sec + frac);
+      plain = false;
+    }
+    rest = raw.replace(re, "").trim();
+    if (rest) {
+      if (ts.length) ts.forEach(t => lines.push({ t, text: rest }));
+      else lines.push({ t: null, text: rest });
+    }
+  }
+  lines.sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  return { lines, plain };
+}
+function renderLyrics() {
+  const body = $("lyr-body");
+  if (!lyricsData || !lyricsData.lines.length) {
+    body.innerHTML = `<div class="lyr-empty">No lyrics parsed.</div>`;
+    return;
+  }
+  const t = player && player.audio ? player.audio.currentTime : 0;
+  // Only re-render when the current line actually changed — avoids rebuilding
+  // the DOM (and re-scrolling) 2x/second for the whole playback duration.
+  let curIdx = -1;
+  for (let i = 0; i < lyricsData.lines.length; i++) {
+    const l = lyricsData.lines[i];
+    if (l.t !== null && l.t <= t) curIdx = i; else break;
+  }
+  if (curIdx === lyricsData._lastCur) return;
+  lyricsData._lastCur = curIdx;
+  body.innerHTML = lyricsData.lines.map((l, i) =>
+    `<div class="lyr-line${i === curIdx ? " cur" : ""}" data-i="${i}">${escapeHtml(l.text)}</div>`
+  ).join("");
+  // Auto-scroll to the current line (auto: don't fight user scrolling).
+  const cur = body.querySelector(".lyr-line.cur");
+  if (cur) cur.scrollIntoView({ block: "center", behavior: "auto" });
+}
+function toggleLyrics() {
+  const panel = $("lyrics-panel");
+  if (panel.style.display === "none") {
+    panel.style.display = "flex";
+    if (player && player.current) loadLyrics(player.current.path);
+    if (!lyricsTimer) lyricsTimer = setInterval(() => {
+      if (panel.style.display !== "none" && lyricsData && player && player.audio) renderLyrics();
+    }, 500);
+  } else {
+    panel.style.display = "none";
+    if (lyricsTimer) { clearInterval(lyricsTimer); lyricsTimer = null; }
+  }
+}
+
+/* ---------------- 🔍 track search ---------------- */
+async function runTrackSearch(q) {
+  const box = $("lib-extra");
+  if (!q) { box.style.display = "none"; return; }
+  box.style.display = "block";
+  box.innerHTML = `<div class="lib-empty">Searching tracks…</div>`;
+  try {
+    const res = await fetch("/api/library/tracks?q=" + encodeURIComponent(q));
+    const data = await res.json();
+    if (!data.ok) { box.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Search failed.")}</div>`; return; }
+    const hits = data.tracks || [];
+    if (hits.length) box.dataset.tracksearch = "1"; else delete box.dataset.tracksearch;
+    box.innerHTML = hits.length ? `<div class="lib-group"><h3>🔍 Track matches (${hits.length})</h3>${hits.map(h =>
+      `<div class="lib-playlist">
+        <button class="link-btn" data-tplay="${encodeURIComponent(h.path)}" title="Play">▶</button>
+        <span><b>${escapeHtml(h.title)}</b> · <span class="muted-sm">${escapeHtml(h.artist)} — ${escapeHtml(h.album)}</span></span>
+        <span class="cnt">${escapeHtml(h.codec || "")}</span>
+      </div>`
+    ).join("")}</div>` : `<div class="lib-empty">No tracks match “${escapeHtml(q)}”.</div>`;
+    box.querySelectorAll("[data-tplay]").forEach(b => b.addEventListener("click", async () => {
+      const p = decodeURIComponent(b.dataset.tplay);
+      const albumPath = p.substring(0, p.lastIndexOf("/"));
+      const res = await fetch("/api/library/album?path=" + encodeURIComponent(albumPath));
+      const data = await res.json();
+      if (!data.ok || !data.tracks || !data.tracks.length) { toast("Could not load that album.", "err"); return; }
+      const idx = data.tracks.findIndex(t => t.path === p);
+      const queue = data.tracks.map(t => ({ path: t.path, title: t.title, artist: t.artist, album: t.album, codec: t.codec, duration: t.duration }));
+      playTrack(queue[Math.max(0, idx)], queue);
+    }));
+  } catch (e) { box.innerHTML = `<div class="lib-empty">${escapeHtml(e.message)}</div>`; }
+}
+
 /* ---------------- 🧠 MusicBrainz tag fixing ---------------- */
-function startMusicBrainz(scope, albumPath) {
+async function startMusicBrainz(scope, albumPath) {
+  // Whole-library runs hit MusicBrainz's 1 req/s rate limit — a big library
+  // takes a while, so estimate it and confirm before starting.
+  if (scope === "library") {
+    let tracks = 0;
+    try {
+      const s = await (await fetch("/api/stats")).json();
+      tracks = (s && s.tracks) || (s && s.total_tracks) || 0;
+    } catch (e) { /* stats unavailable — confirm without a count */ }
+    const mins = Math.ceil(tracks / 60);
+    const est = tracks > 0 ? ` ~${mins} min at 1 track/sec` : "";
+    const okGo = confirm(`MusicBrainz scans the whole library at 1 request/second (their rate limit).${est}. Keep the app open until it finishes — you can keep using it meanwhile.\n\nStart the whole-library tag fix?`);
+    if (!okGo) return;
+  }
   startLibraryTask("/api/library/musicbrainz",
     scope === "library" ? { scope: "library" } : { path: albumPath },
     "MusicBrainz",
@@ -4321,6 +4777,39 @@ $("btn-w-setup-start").addEventListener("click", startWrapperSetup);  $("btn-lib
     libSearchTimer = setTimeout(refreshLibrary, 350);
   });
   $("lib-search").addEventListener("keydown", (e) => { if (e.key === "Enter") refreshLibrary(); });
+  // Track-level search: as you type in the Library search box, also search
+  // individual track titles and list them above the artist results.
+  $("lib-search").addEventListener("input", () => {
+    const q = $("lib-search").value.trim();
+    // Only show track matches when the Library list itself is being filtered
+    // (the box is focused and has text) — other panels (stats, import, …)
+    // render into the same container and must not be clobbered. Clearing the
+    // box hides the stale matches again.
+    if (q.length >= 2 && document.activeElement === $("lib-search")) {
+      runTrackSearch(q);
+    } else if (q.length < 2 && document.activeElement === $("lib-search")) {
+      // Hide stale track matches (the h3 starts with an emoji, so use
+      // includes — a plain indexOf === 0 would never match).
+      const be = $("lib-extra");
+      if (be && be.dataset.tracksearch && be.querySelector(".lib-group h3") && be.querySelector(".lib-group h3").textContent.includes("Track matches")) {
+        be.style.display = "none";
+        delete be.dataset.tracksearch;
+      }
+    }
+  });
+  $("pill-theme").addEventListener("click", toggleTheme);
+  $("btn-lib-index").addEventListener("click", showIndexExport);
+  $("btn-lib-recent").addEventListener("click", showRecentPlays);
+  $("pb-lyrics").addEventListener("click", toggleLyrics);
+  $("lyr-close").addEventListener("click", () => { $("lyrics-panel").style.display = "none"; });
+  // Theme via keyboard (t) and lyrics via (l) — alongside the player keys.
+  document.addEventListener("keydown", (e) => {
+    const el = e.target;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+    const k = (e.key || "").toLowerCase();
+    if (k === "t" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleTheme();
+    else if (k === "l" && !e.metaKey && !e.ctrlKey && !e.altKey) toggleLyrics();
+  });
   $("btn-save-settings").addEventListener("click", saveSettings);
 $("btn-clear").addEventListener("click", async () => {
   await fetch("/api/jobs", { method: "DELETE" });
@@ -4329,14 +4818,27 @@ $("btn-clear").addEventListener("click", async () => {
 function updateCodecHint(status) {
   const hint = $("wrapper-hint");
   const codec = currentCodec();
-  // ALAC (alone or as the first fallback priority) needs the wrapper server:
-  // the license exchange fails with status -1002 without it, and gamdl does
-  // not fall back to AAC after that error.
-  const needsWrapper = codec === "alac" || codec === "alac,aac-web" || codec === "atmos";
-  if (needsWrapper && !(status && status.wrapper_enabled)) {
+  // ALAC and Dolby Atmos can ONLY come from the wrapper server — there is no
+  // lossy fallback for them, and gamdl's license exchange fails with a cryptic
+  // error (-1002) when the wrapper isn't there. Show exactly what's missing:
+  // the setting, the server, or the login.
+  const needsWrapper = codec === "alac" || codec === "atmos";
+  const label = codec === "atmos" ? "Dolby Atmos" : "ALAC lossless";
+  const enabled = !!(status && status.wrapper_enabled);
+  const ready = !!(status && status.wrapper_ok);
+  if (needsWrapper && !enabled) {
     hint.style.display = "block";
-    hint.textContent = "⚠ " + (codec === "atmos" ? "Dolby Atmos" : "ALAC") + " needs the wrapper server — pick 'AAC 256' for now, then run setup_wrapper.sh to enable lossless.";
-  } else if (!(status && status.wrapper_enabled && !(status.cookies_exists))) {
+    hint.textContent = "⚠ " + label + " needs the wrapper server — enable 'Use wrapper' in Settings (⚙ → Wrapper & login), or pick 'AAC 256' for now.";
+  } else if (needsWrapper && enabled && !ready) {
+    hint.style.display = "block";
+    hint.textContent = "⚠ " + label + " needs the wrapper, but it's not ready (Docker stopped or not logged in) — see the '5 · Wrapper & login' panel.";
+  } else if (needsWrapper) {
+    hint.style.display = "block";
+    hint.textContent = "✓ Wrapper is on and authenticated — " + label + " downloads will work.";
+  } else if (status && status.wrapper_enabled && !status.cookies_exists) {
+    hint.style.display = "block";
+    hint.textContent = "Wrapper mode doesn't need cookies — the wrapper logs in with your Apple ID.";
+  } else {
     hint.style.display = "none";
   }
 }
@@ -4361,6 +4863,10 @@ $("btn-log-refresh").addEventListener("click", refreshSyslog);
 window.addEventListener("resize", segThumbs);
 
 (async function init() {
+  // Restore the saved theme before first paint.
+  let savedTheme = "dark";
+  try { savedTheme = localStorage.getItem("mhr-theme") || "dark"; } catch (e) {}
+  applyTheme(savedTheme);
   segThumbs();  // highlight the default codec immediately, before any network
   try {
     const [status, cfg] = await Promise.all([fetch("/api/status").then(r => r.json()), fetch("/api/config").then(r => r.json())]);

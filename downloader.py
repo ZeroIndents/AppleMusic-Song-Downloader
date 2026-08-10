@@ -650,6 +650,13 @@ def _ledger_ensure_schema() -> None:
                 downloaded_at REAL,
                 job_id        TEXT
             )""")
+            # v1.2: play tracking columns (play_count, last_played) — added
+            # via ALTER for databases created before this release.
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(tracks)").fetchall()}
+            for col, decl in (("play_count", "INTEGER DEFAULT 0"),
+                              ("last_played", "REAL")):
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE tracks ADD COLUMN {col} {decl}")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album, artist)")
             conn.commit()
             _LEDGER_READY = True
@@ -1387,6 +1394,32 @@ def amdl_wrapper_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
+def wrapper_state(url: str | None = None, timeout: float = 4.0) -> dict:
+    """Reachability + auth state of the gamdl wrapper-v2 server.
+
+    GETs {url}/me (the same endpoint wrapperctl.wrapper_status uses) and
+    returns {"reachable": bool, "auth_state": str, "playback_ready": bool}.
+    Used by the ALAC/Atmos preflight so a missing/unlogged wrapper fails
+    with a clear message instead of a cryptic gamdl license error.
+    """
+    base = (url or "http://127.0.0.1").rstrip("/")
+    try:
+        req = urllib.request.Request(
+            base + "/me", headers={"User-Agent": "MusicHighRes/1.2"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            me = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return {"reachable": False, "auth_state": "unknown", "playback_ready": False}
+    auth = me.get("auth", {}) if isinstance(me, dict) else {}
+    runtime = me.get("runtime", {}) if isinstance(me, dict) else {}
+    return {
+        "reachable": True,
+        "auth_state": auth.get("state", "unknown"),
+        "playback_ready": bool(runtime.get("playback_ready")),
+    }
+
+
 def _amdl_config_text(config: Config, options: dict) -> str:
     """Generate the amdl config.yaml, mounted into the container at
     /app/config.yaml (the image's baked-in config fails to parse). All save
@@ -1591,6 +1624,43 @@ def run_job(job: Job, env: dict | None = None) -> None:
             tool = "amdl"
             cmd = build_amdl_command(job.config, job.options, job.urls)
         else:
+            # gamdl ALAC/Atmos preflight: the wrapper is mandatory for the
+            # "atmos" and pure "alac" codecs (they have no AAC fallback) —
+            # fail fast with a clear message instead of letting gamdl die on
+            # a cryptic license error (-1002 / "could not find requested
+            # codec") several lines down.
+            codec = job.codec or ""
+            use_wrapper = bool(job.options.get("use_wrapper", job.config.get("use_wrapper")))
+            mandatory = codec == "atmos" or codec == "alac"
+            if mandatory:
+                if not use_wrapper:
+                    job.add_line("ERROR: " + ("Dolby Atmos" if codec == "atmos" else "ALAC") + " downloads need the wrapper server — enable 'Use wrapper' in Settings (or run setup_wrapper.sh), then start it from the '5 · Wrapper & login' panel.")
+                    job.set_status("failed")
+                    if job.manager:
+                        job.manager._finish(job)
+                    return
+                wurl = job.options.get("wrapper_url") or job.config.get("wrapper_url") or "http://127.0.0.1"
+                ws = wrapper_state(wurl)
+                if not ws["reachable"]:
+                    job.add_line(f"ERROR: the wrapper server isn't reachable at {wurl} — is Docker running and the wrapper started? See the '5 · Wrapper & login' panel.")
+                    job.set_status("failed")
+                    if job.manager:
+                        job.manager._finish(job)
+                    return
+                if ws["auth_state"] != "authenticated":
+                    job.add_line(f"ERROR: the wrapper is up but not logged in (state: {ws['auth_state']}) — log in from the '5 · Wrapper & login' panel first.")
+                    job.set_status("failed")
+                    if job.manager:
+                        job.manager._finish(job)
+                    return
+                if not ws["playback_ready"]:
+                    job.add_line("WARNING: wrapper reports playback not ready yet — if downloads fail, check the Wrapper panel.")
+            elif "alac" in codec and not use_wrapper:
+                job.add_line("Note: wrapper is off — lossless ALAC won't be available; tracks fall back to AAC (enable 'Use wrapper' in Settings for lossless).")
+            elif use_wrapper:
+                ws = wrapper_state(job.options.get("wrapper_url") or job.config.get("wrapper_url") or "http://127.0.0.1")
+                if not ws["reachable"]:
+                    job.add_line("WARNING: the wrapper isn't reachable — lossless will be skipped; tracks fall back to AAC.")
             cmd = build_gamdl_command(job.config, job.options, job.urls)
     elif engine == "spotify":
         cmd = build_votify_command(job.config, job.options, job.urls)
@@ -4472,3 +4542,331 @@ def delete_empty_dirs(output_dir: str) -> int:
         if n == 0:
             break
     return removed
+
+# ---------------------------------------------------------------------------
+# v1.2 feature batch (10 must-haves): track search, album format conversion,
+# lyrics sidecar reading, cover replace, play-count ledger, index export,
+# .m3u import.
+# ---------------------------------------------------------------------------
+
+
+def search_tracks(output_dir: str, query: str, limit: int = 60) -> list[dict]:
+    """Search the library by track title / file name, not just artist/album.
+
+    Returns flat matches: {path, name, title, artist, album, album_path,
+    artist_path, codec}. Reads tags only for files whose file name matches
+    (cheap — no full-library tag pass)."""
+    root = Path(output_dir)
+    q = (query or "").strip().lower()
+    if not q or not root.is_dir():
+        return []
+    hits: list[dict] = []
+    try:
+        for artist_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name != "Playlists" and not p.name.startswith(".")):
+            album_dirs = [p for p in artist_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
+            # Loose files directly under the artist folder count as a
+            # pseudo-album so they're searchable too — even when the artist
+            # also has real album subfolders.
+            loose = [p for p in artist_dir.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS]
+            folders = album_dirs + ([artist_dir] if loose else [])
+            for folder in folders:
+                files = loose if folder is artist_dir else sorted(folder.iterdir())
+                for p in files:
+                    if p.suffix.lower() not in AUDIO_EXTS or not p.is_file():
+                        continue
+                    if q not in p.stem.lower():
+                        continue
+                    tags = read_audio_tags(p)
+                    album_name = artist_dir.name if folder is artist_dir else folder.name
+                    hits.append({
+                        "path": str(p),
+                        "name": p.name,
+                        "title": tags.get("title") or p.stem,
+                        "artist": tags.get("artist") or artist_dir.name,
+                        "album": tags.get("album") or album_name,
+                        "album_path": str(folder),
+                        "artist_path": str(artist_dir),
+                        "codec": file_codec(p),
+                    })
+                    if len(hits) >= limit:
+                        return hits
+    except OSError:
+        pass
+    return hits
+
+
+def convert_album_to_format(album_path: str, codec: str, overwrite: bool = False) -> dict:
+    """Convert every audio file in one album folder to the given codec.
+
+    codec: 'flac' | 'mp3' | 'opus' | 'aac' | 'ogg'. Original files are always
+    kept; a target with the same stem + new extension is written next to them.
+    Lossy sources are converted too (user asked for it) — unlike the ALAC→FLAC
+    auto-convert, this is an explicit action. Returns {ok, converted, skipped,
+    errors, codec, notes}.
+    """
+    mapping = {
+        "flac": (".flac", ["-c:a", "flac"]),
+        "mp3": (".mp3", ["-c:a", "libmp3lame", "-b:a", "320k"]),
+        "opus": (".opus", ["-c:a", "libopus", "-b:a", "192k"]),
+        "aac": (".m4a", ["-c:a", "aac", "-b:a", "256k"]),
+        "ogg": (".ogg", ["-c:a", "libvorbis", "-q:a", "6"]),
+    }
+    if codec not in mapping:
+        return {"ok": False, "error": f"Unknown codec '{codec}' — use flac, mp3, opus, aac or ogg."}
+    if not ffmpeg_binary():
+        return {"ok": False, "error": "ffmpeg isn't installed — needed for conversion."}
+    ext, codec_args = mapping[codec]
+    album_dir = Path(album_path)
+    files = [p for p in album_dir.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS]
+    if not files:
+        return {"ok": False, "error": "No audio files in that folder."}
+    converted = skipped = errors = 0
+    notes: list[str] = []
+    for p in sorted(files):
+        if p.suffix.lower() == ext:
+            skipped += 1
+            notes.append(f"skip (already {codec}): {p.name}")
+            continue
+        target = p.with_suffix(ext)
+        if target.exists() and not overwrite:
+            skipped += 1
+            notes.append(f"skip (already has {target.name}): {p.name}")
+            continue
+        cmd = [
+            ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(p),
+            "-map", "0:a", "-map", "0:v?",
+            *codec_args, "-c:v", "copy",
+            "-map_metadata", "0",
+            str(target),
+        ]
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            if out.returncode == 0 and target.exists() and target.stat().st_size > 0:
+                converted += 1
+                notes.append(f"→ {target.name}")
+            else:
+                msg = (out.stderr or out.stdout or "ffmpeg failed").strip().splitlines()
+                errors += 1
+                notes.append(f"ERROR {p.name}: {msg[-1] if msg else 'unknown'}")
+        except (OSError, subprocess.SubprocessError) as e:
+            errors += 1
+            notes.append(f"ERROR {p.name}: {e}")
+    return {"ok": True, "codec": codec, "converted": converted,
+            "skipped": skipped, "errors": errors, "notes": notes}
+
+
+def read_lyrics_sidecar(audio_path: str | Path) -> str | None:
+    """Read the .lrc sidecar next to an audio file, if present (synced or
+    plain). Returns the text or None."""
+    p = Path(audio_path)
+    for sidecar in (p.with_suffix(".lrc"),):
+        if sidecar.is_file():
+            try:
+                return sidecar.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+    return None
+
+
+def write_album_cover(album_dir: str | Path, data: bytes, mime: str) -> dict:
+    """Embed the given cover image into every audio file in an album folder.
+
+    Returns {ok, updated, errors, message}."""
+    album = Path(album_dir)
+    files = _album_audio_files(album)
+    if not files:
+        return {"ok": False, "error": "No audio files in that folder."}
+    updated = errors = 0
+    for p in files:
+        try:
+            if _embed_cover(p, data, mime):
+                updated += 1
+            else:
+                errors += 1
+        except Exception:
+            errors += 1
+    return {"ok": True, "updated": updated, "errors": errors,
+            "message": f"Cover written into {updated} file(s)" + (f", {errors} failed" if errors else "")}
+
+
+def ledger_play(output_dir: str, path: str) -> bool:
+    """Record a play in the ledger (play_count + last_played) for one file."""
+    output = Path(output_dir).resolve()
+    target = Path(os.path.expanduser(path)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return False
+    if not target.is_file():
+        return False
+    now = time.time()
+    try:
+        def _up(conn):
+            # Files never recorded before get mtime as their (approximate)
+            # downloaded_at so the Library "added" date isn't the play time.
+            conn.execute(
+                "INSERT INTO tracks (path, mtime, size, codec, downloaded_at, play_count, last_played) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?) "
+                "ON CONFLICT(path) DO UPDATE SET "
+                "play_count = play_count + 1, last_played = ?",
+                (str(target), target.stat().st_mtime, target.stat().st_size, file_codec(target),
+                 target.stat().st_mtime, now, now),
+            )
+            conn.commit()
+        _ledger_query(_up)
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def ledger_recent_plays(output_dir: str, limit: int = 12) -> list[dict]:
+    """Most recently played tracks from the ledger (path, title-ish name,
+    last_played, play_count)."""
+    output = Path(output_dir).resolve()
+    try:
+        def _q(conn):
+            rows = conn.execute(
+                "SELECT path, play_count, last_played, codec FROM tracks "
+                "WHERE last_played IS NOT NULL "
+                "ORDER BY last_played DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        rows = _ledger_query(_q)
+    except sqlite3.Error:
+        return []
+    out = []
+    for r in rows:
+        p = Path(r["path"])
+        rel = ""
+        try:
+            rel = str(p.relative_to(output))
+        except ValueError:
+            rel = p.name
+        out.append({
+            "path": r["path"],
+            "name": p.name,
+            "rel": rel,
+            "play_count": r["play_count"],
+            "last_played": r["last_played"],
+            # Codec so the player knows whether to transcode (ALAC can't be
+            # decoded by Chrome/Firefox/Edge) — matches list_album_files.
+            "codec": r["codec"] or (file_codec(p) if p.is_file() else ""),
+        })
+    return out
+
+
+def export_library_index(output_dir: str, fmt: str = "csv") -> tuple[str, str]:
+    """Export a full library track index as CSV or a self-contained HTML page.
+
+    Returns (content, filename). fmt: 'csv' | 'html'."""
+    root = Path(output_dir)
+    rows: list[dict] = []
+    try:
+        for artist_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name != "Playlists" and not p.name.startswith(".")):
+            for album_dir in sorted(p for p in artist_dir.iterdir() if p.is_dir() and not p.name.startswith(".")):
+                for p in sorted(album_dir.iterdir()):
+                    if p.suffix.lower() not in AUDIO_EXTS or not p.is_file():
+                        continue
+                    tags = read_audio_tags(p)
+                    rows.append({
+                        "artist": artist_dir.name,
+                        "album": album_dir.name,
+                        "track": tags.get("track") or "",
+                        "title": tags.get("title") or p.stem,
+                        "codec": file_codec(p) or p.suffix.lstrip(".").upper(),
+                        "size": p.stat().st_size if p.is_file() else 0,
+                        "path": str(p),
+                    })
+    except OSError:
+        pass
+    import csv as _csv
+    import io as _io
+    if fmt == "html":
+        from urllib.parse import quote as _quote
+        items = "".join(
+            f"<tr><td>{_esc(r['artist'])}</td><td>{_esc(r['album'])}</td>"
+            f"<td>{_esc(r['track'])}</td><td>{_esc(r['title'])}</td>"
+            f"<td>{_esc(r['codec'])}</td><td>{r['size']:,}</td></tr>"
+            for r in rows
+        )
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Music High Res — Library index ({len(rows)} tracks)</title>
+<style>body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;margin:32px;background:#0d0d14;color:#f2f2f7}}
+table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #2a2a3a;padding:6px 10px;font-size:13px;text-align:left}}
+th{{background:#14141f;position:sticky;top:0}}tr:nth-child(even){{background:#14141f}}
+h1{{font-size:18px}}code{{color:#af52de}}</style></head><body>
+<h1>🎧 Music High Res — Library index · {len(rows)} tracks</h1>
+<p>Exported from <code>{_esc(str(root))}</code></p>
+<table><thead><tr><th>Artist</th><th>Album</th><th>#</th><th>Title</th><th>Codec</th><th>Size</th></tr></thead>
+<tbody>{items}</tbody></table></body></html>"""
+        return html, "music-high-res-library-index.html"
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(["artist", "album", "track", "title", "codec", "size_bytes", "path"])
+    for r in rows:
+        writer.writerow([r["artist"], r["album"], r["track"], r["title"], r["codec"], r["size"], r["path"]])
+    return buf.getvalue(), "music-high-res-library-index.csv"
+
+
+def import_m3u_playlist(output_dir: str, name: str, content: str, artist: str = "Imported") -> dict:
+    """Import an .m3u playlist: parse entries, resolve paths against the
+    output folder, and write a Playlists/{artist}/{name}.m3u with only the
+    entries that exist. Returns {ok, matched, missing, written}."""
+    import re as _re
+    name = (name or "Playlist").strip().replace("/", "-") or "Playlist"
+    artist = (artist or "Imported").strip().replace("/", "-") or "Imported"
+    root = Path(output_dir)
+    entries: list[str] = []
+    for line in (content or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        p = Path(line)
+        if not p.is_absolute():
+            p = root / line
+        p = Path(os.path.expanduser(str(p))).resolve()
+        try:
+            p.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
+            entries.append(str(p))
+    matched = len(entries)
+    # Count entries that point at files which don't exist (informational).
+    missing = 0
+    for line in (content or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        p = Path(line)
+        if not p.is_absolute():
+            p = root / line
+        p = Path(os.path.expanduser(str(p))).resolve()
+        try:
+            p.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if not (p.is_file() and p.suffix.lower() in AUDIO_EXTS):
+            missing += 1
+    if not entries:
+        return {"ok": False, "error": "No existing library tracks matched in that .m3u.",
+                "matched": 0, "missing": missing}
+    dest_dir = root / "Playlists" / artist
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{name}.m3u"
+    body = "#EXTM3U\n"
+    for e in entries:
+        body += f"#EXTINF:0,{Path(e).stem}\n{e}\n"
+    try:
+        dest.write_text(body, encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "error": f"Could not write playlist: {exc}", "matched": matched, "missing": missing}
+    return {"ok": True, "matched": matched, "missing": missing,
+            "written": str(dest), "name": name}
+
+
+def _esc(s: str) -> str:
+    """HTML-escape helper for the HTML library index export."""
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

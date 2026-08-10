@@ -6,6 +6,22 @@ documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions loosely follow [Semantic Versioning](https://semver.org/).
 - **[Unreleased]** — changes in the working tree not yet released.
+
+## [Unreleased]
+
+### Fixed
+- **Dolby Atmos / pure-ALAC downloads now fail with a clear message instead of a
+  cryptic gamdl license error.** The wrapper is mandatory for Atmos (and pure
+  ALAC) — there is no AAC fallback gamdl can use — but the app previously only
+  routed through the wrapper if the user had separately enabled "Use wrapper"
+  in Settings. Now: the download button always sends `use_wrapper` for Atmos /
+  pure-ALAC codecs (backend also forces it), and the job preflights the wrapper
+  before launching gamdl: wrapper setting off → "enable Use wrapper in
+  Settings"; server unreachable → "is Docker running?"; up but not logged in →
+  "log in from the 5 · Wrapper & login panel". When the wrapper genuinely is
+  ready, an ✓ confirmation shows in the codec hint.
+- `/api/status` now reports `wrapper_ok` (reachability + auth) so the UI can
+  tell "wrapper off" from "wrapper on but broken".
 - Dated sections describe what is actually **on GitHub** (`main`, tagged
   releases).
 
@@ -15,6 +31,35 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 ---
 
 ## [Unreleased]
+
+### Added
+
+- **🌓 Light / dark theme** — one-click toggle in the header (or press **t**);
+  the whole palette is CSS-variable driven, and your choice is remembered
+  across sessions. Keyboard shortcuts for the player area are extended with
+  **l** to toggle lyrics.
+- **🔍 Track-level Library search** — the Library search box now also matches
+  individual track titles/file names (not just artists and albums) and lists
+  the hits above the artist tree, each one playable in one click.
+- **🔄 Album format conversion** — every album row gets a convert button with
+  a target picker: **FLAC / MP3 320k / Opus 192k / AAC 256k / OGG q6**.
+  Originals are always kept; runs as a background task with a toast summary.
+- **💬 In-player lyrics viewer** — a lyrics panel (button in the player bar or
+  press **l**) shows the track's `.lrc` sidecar with the current line
+  highlighted and auto-scrolled; it follows track changes and seeking.
+- **🖼 Cover viewer + replace** — every album row gets a cover button that
+  shows the current embedded art and lets you replace it from a file; the
+  image is written into every track in the folder.
+- **🕘 Play tracking** — pressing play records `play_count` + `last_played`
+  in the SQLite ledger (schema migrates in place); a **Recent** button lists
+  your most-played/last-played tracks with one-click replay.
+- **⤓ Library index export** — a full track listing (artist / album / track /
+  title / codec / size / path) as CSV or a self-contained HTML page.
+- **🎵 .m3u playlist import** — the Import panel accepts an .m3u file, matches
+  its entries against files already in your library, and saves a playlist
+  under `Playlists/{artist}/{name}.m3u` (missing entries are reported).
+- **⬇ Per-track catalog download** — song results in the catalog Search get a
+  one-click **Download** button that queues that song immediately.
 
 ### Added
 
@@ -84,6 +129,16 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
   and "OGG" filters actually match their files; WAV now counts as lossless
   in the quality histogram and quality badges render `WAV` instead of
   `PCM_S16LE`.
+- **Linux "Open in file manager" failed** — the route shelled out to macOS's
+  `open` on every non-Windows platform. It now uses `xdg-open` on Linux
+  (with proper macOS `open`/`open -R` and Windows `explorer` branches).
+- **Restore could point the app at a dead output folder** — restoring a
+  backup with a stale/bogus `output_path` (e.g. from another machine) is
+  now rejected: the path must already exist or have a creatable parent. The
+  restore response also lists skipped keys.
+- **Whole-library MusicBrainz runs had no time expectation** — the button
+  now fetches the track count, estimates the runtime (~1 track/sec rate
+  limit) and confirms before starting a long scan.
 - **Artist quality badge showed stale data under quality/recent filters** —
   it's recomputed from the filtered album list, and WAV albums display
   correctly.
