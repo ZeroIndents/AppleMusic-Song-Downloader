@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Music High Res — lossless Apple Music downloads">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d0d14"/>
+      <stop offset="1" stop-color="#12121c"/>
+    </linearGradient>
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fa2d48"/>
+      <stop offset=".55" stop-color="#af52de"/>
+      <stop offset="1" stop-color="#5e5ce6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".45" r=".62">
+      <stop offset="0" stop-color="#af52de" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#af52de" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".14"/>
+      <stop offset=".5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <rect width="1280" height="320" fill="url(#glow)"/>
+
+  <!-- faint grid -->
+  <g stroke="#ffffff" stroke-opacity=".035" stroke-width="1">
+    <line x1="0" y1="80"  x2="1280" y2="80"/>
+    <line x1="0" y1="160" x2="1280" y2="160"/>
+    <line x1="0" y1="240" x2="1280" y2="240"/>
+    <line x1="320"  y1="0" x2="320"  y2="320"/>
+    <line x1="640"  y1="0" x2="640"  y2="320"/>
+    <line x1="960"  y1="0" x2="960"  y2="320"/>
+  </g>
+
+  <!-- logo tile -->
+  <g transform="translate(56,60)">
+    <rect width="200" height="200" rx="44" fill="url(#grad)"/>
+    <rect width="200" height="200" rx="44" fill="url(#shade)"/>
+    <rect x="3" y="3" width="194" height="194" rx="41" fill="none" stroke="#ffffff" stroke-opacity=".18" stroke-width="1.5"/>
+    <g fill="#ffffff" transform="rotate(-8 100 106)">
+      <ellipse cx="48"  cy="126" rx="31"  ry="22" transform="rotate(-24 48 126)"/>
+      <ellipse cx="152" cy="104" rx="31"  ry="22" transform="rotate(-24 152 104)"/>
+      <rect x="44" y="33"  width="14" height="93" rx="7"/>
+      <rect x="148" y="33" width="14" height="70" rx="7"/>
+      <rect x="42" y="30"  width="116" height="18" rx="9"/>
+    </g>
+  </g>
+
+  <!-- title + tagline -->
+  <text x="302" y="140" font-family="'SF Pro Display', -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="800" fill="#f2f2f7" letter-spacing="-.5">Music High Res</text>
+  <text x="304" y="178" font-family="'SF Pro Text', -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="20" fill="#9b9baa" letter-spacing=".2">Lossless ALAC · Dolby Atmos · Spotify · YouTube Music</text>
+  <text x="304" y="208" font-family="'SF Pro Text', -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="16" fill="#6b6b82">Your subscription. Your library. One click.</text>
+
+  <!-- chips -->
+  <g transform="translate(304,236)" font-family="'SF Pro Text', -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="13.5" font-weight="600">
+    <g>
+      <rect width="118" height="34" rx="17" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".1"/>
+      <circle cx="24" cy="17" r="4.5" fill="#30d158"/>
+      <text x="38" y="22" fill="#d8d8e4">macOS</text>
+    </g>
+    <g transform="translate(132,0)">
+      <rect width="118" height="34" rx="17" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".1"/>
+      <circle cx="24" cy="17" r="4.5" fill="#5e5ce6"/>
+      <text x="38" y="22" fill="#d8d8e4">Windows</text>
+    </g>
+    <g transform="translate(264,0)">
+      <rect width="118" height="34" rx="17" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".1"/>
+      <circle cx="24" cy="17" r="4.5" fill="#ffd60a"/>
+      <text x="38" y="22" fill="#d8d8e4">Linux</text>
+    </g>
+    <g transform="translate(396,0)">
+      <rect width="150" height="34" rx="17" fill="#fa2d48" fill-opacity=".16" stroke="#fa2d48" stroke-opacity=".35"/>
+      <text x="20" y="22" fill="#ffc1bd">♥ PWA + CLI</text>
+    </g>
+  </g>
+</svg>
