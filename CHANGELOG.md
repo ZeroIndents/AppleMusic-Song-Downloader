@@ -9,6 +9,49 @@ and versions loosely follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — 30 small/medium features (working tree, unreleased)
+- **Queue reorder** — queued jobs get ▲/▼ buttons; the backend keeps a queue
+  order that controls *actual execution order* (a concurrency gate only lets
+  the front-most queued job take a slot, so ▲/▼ changes who runs next, not
+  just the list view). Retry-backoff jobs are excluded from the gate so a
+  failed job's 1m/5m/15m wait never freezes the queue behind it. (`/api/jobs/reorder`).
+- **Album durations** — album rows show total play time (lazy, cached via
+  `/api/library/album/duration`).
+- **🔥 Most played** — ledger-driven top-played tracks panel + **reset play
+  counts** (`/api/library/most-played`, `/api/library/plays/clear`).
+- **Save cover to file** — the cover viewer writes the embedded art to
+  `cover.jpg/png` next to the album (`/api/library/album/cover/save`).
+- **Genre + Disc tags** — tag editor and bulk editor gain Genre and Disc #
+  fields (read/write via mutagen).
+- **Batch-complete chime** — a two-note Web Audio chime when a download batch
+  finishes; toggle in Settings (`chime_on_done`).
+- **Job log pin** — 📌 button freezes a running job's auto-scroll while you
+  read the tail.
+- **Open output folder on done jobs** — finished download cards get a Finder/
+  Explorer button.
+- **Settings test buttons** — "Test" next to the scan-hook and notify URLs
+  sends a sample ping (`/api/hooks/test`).
+- **Reset to defaults** — one-click settings reset keeps output folder +
+  cookies, restores every other setting (`/api/config/reset`).
+- **Accent colour picker** — preset swatches + custom colour wheel; applies
+  the CSS gradient immediately and saves to config (`accent_color`).
+- **Watch-folder ignore patterns** — comma-separated substrings to skip
+  (`.DS_Store`, `.part`, …) via `watch_ignore`.
+- **Header uptime pill** — 🕐 shows how long the server has been up.
+- **Log download** — the logs panel's ⬇ button downloads the full file
+  (`/api/logs/download`).
+- **Ledger filter** — the missing-files list is now filterable as you type.
+- **Library sort** — albums sort by name / newest added / biggest.
+- **Bulk convert** — multi-select albums → "🔄 Convert to FLAC" in the bulk bar.
+- **Releases: ignore + open** — 🙈 hides an artist's releases; 🔗 opens the
+  release on Apple Music (`/api/releases/ignore`).
+- **Wishlist ownership** — items show ✓ owned / new badges; "Download all"
+  skips what the ledger already owns.
+- **Player: playback rate** (0.5×–2×, remembered), **sleep timer** (15–60 min),
+  **play queue** panel (☰), **copy lyrics** button.
+- **Onboarding: open output folder** button in the Getting-started drawer.
+- **Keyboard shortcut** — ⌘/Ctrl+Enter in the URL box starts the download.
+
 ### Fixed
 - **Dolby Atmos / pure-ALAC downloads now fail with a clear message instead of a
   cryptic gamdl license error.** The wrapper is mandatory for Atmos (and pure

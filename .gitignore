@@ -45,3 +45,6 @@ Music High Res.app/
 
 # ── gamdl scratch (encrypted temp downloads) ────────────────────
 gamdl_temp_*/
+
+# ── runtime queue persistence (job URLs, machine-specific) ──────────
+pending_jobs.json

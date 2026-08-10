@@ -16,12 +16,13 @@ import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory
 import wrapperctl
 import migrate
 from downloader import (
     PROJECT_DIR,
     RES_DIR,
+    DEFAULT_CONFIG,
     Config,
     JobManager,
     WatchFolder,
@@ -98,6 +99,10 @@ from downloader import (
     ytm_version,
     trash_info,
     write_audio_tags,
+    album_duration,
+    ledger_most_played,
+    ledger_clear_plays,
+    save_album_cover,
 )
 
 PORT = int(os.environ.get("MHR_PORT", "8741"))
@@ -106,6 +111,9 @@ HOST = "127.0.0.1"
 # when cutting the next release.
 VERSION = "1.2.0"
 LOG_DIR = PROJECT_DIR / "logs"
+
+# Server boot timestamp — powers the header "up for …" pill (/api/status).
+_SERVER_START = time.time()
 # static/index.html is a bundled read-only resource — in a PyInstaller binary
 # it lives in the _MEIPASS dir, in source mode next to the app.
 STATIC_DIR = RES_DIR / "static"
@@ -360,6 +368,8 @@ def api_status():
         "platform": sys.platform,  # "darwin" | "linux" | "win32" — UI uses it for Finder/Explorer labels
         "version": VERSION,
         "any_active": manager.any_active(),
+        "started_at": _SERVER_START,
+        "uptime": int(time.time() - _SERVER_START),
     })
 
 
@@ -383,7 +393,7 @@ def _normalize_config_value(key: str, value):
             value = int(value)
         except (TypeError, ValueError):
             return None
-    elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync", "amdl_convert_keep_original", "desktop_notify", "remote_bind", "auto_clean_empty"):
+    elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync", "amdl_convert_keep_original", "desktop_notify", "remote_bind", "auto_clean_empty", "chime_on_done"):
         value = bool(value)
     elif key in ("max_concurrent", "auto_retry"):
         try:
@@ -391,8 +401,17 @@ def _normalize_config_value(key: str, value):
         except (TypeError, ValueError):
             return None
     elif key in ("watch_folder", "notify_url", "spotify_wvd_path", "remote_token",
-                 "server_type", "server_url", "server_token", "server_section"):
+                 "server_type", "server_url", "server_token", "server_section",
+                 "watch_ignore"):
         value = str(value).strip()
+    elif key == "releases_ignored":
+        if not isinstance(value, list):
+            return None
+        value = [str(v).strip() for v in value if isinstance(v, (str, int, float))]
+    elif key == "accent_color":
+        value = str(value).strip()
+        if value and not value.startswith("#"):
+            return None
     elif key == "smart_playlists":
         if not isinstance(value, list):
             return None
@@ -608,11 +627,45 @@ def api_library_export():
     return resp
 
 
-@app.post("/api/scan-hook")
-def api_scan_hook():
-    """Trigger a scan on the configured media server (Navidrome / Plex /
-    Jellyfin preset) or POST the raw scan-hook webhook. Also fires after each
-    batch — this button is the manual "scan now"."""
+@app.post("/api/hooks/test")
+def api_hooks_test():
+    """Send a test payload to the configured scan hook / media server or the
+    new-release notify webhook — so users can verify a URL without waiting for
+    a real batch. Body: {"target": "scan" | "notify"}."""
+    import json as _json
+    import urllib.request as _urlreq
+    import urllib.error as _urlerr
+
+    target = str((request.get_json(silent=True) or {}).get("target") or "scan")
+    if target == "notify":
+        url = str(config.get("notify_url") or "").strip()
+        payload = {"test": True, "title": "Music High Res — test notification", "releases": [], "message": "This is a test from Music High Res ✓"}
+    else:
+        preset = server_scan_request(config)
+        if not preset:
+            url = str(config.get("scan_hook_url") or "").strip()
+            payload = {"test": True, "message": "Music High Res scan-hook test ✓"}
+        else:
+            method, url, headers, body = preset
+            try:
+                data = _json.dumps(body).encode() if method == "POST" else None
+                req = _urlreq.Request(url, data=data, headers={k: v for k, v in headers.items() if v}, method=method)
+                with _urlreq.urlopen(req, timeout=8):
+                    return jsonify({"ok": True, "target": "server", "url": url})
+            except Exception as e:
+                return jsonify({"ok": False, "error": f"Server preset failed: {e}", "url": url}), 502
+    if not url:
+        return jsonify({"ok": False, "error": "No URL configured for that target."}), 400
+    try:
+        req = _urlreq.Request(url, data=_json.dumps(payload).encode(),
+                              headers={"Content-Type": "application/json"}, method="POST")
+        with _urlreq.urlopen(req, timeout=8):
+            return jsonify({"ok": True, "target": target, "url": url})
+    except _urlerr.HTTPError as e:
+        return jsonify({"ok": False, "error": f"HTTP {e.code}: {e.reason}", "url": url}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "url": url}), 502
+
     preset = server_scan_request(config)
     if preset:
         method, url, headers, body = preset
@@ -1356,6 +1409,62 @@ def api_library_recent():
     return jsonify({"ok": True, "recent": recent})
 
 
+@app.get("/api/library/most-played")
+def api_library_most_played():
+    """Most-played tracks (play_count DESC) from the ledger."""
+    try:
+        most = ledger_most_played(expand_path(config.get("output_path")))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "most_played": most})
+
+
+@app.post("/api/library/plays/clear")
+def api_library_plays_clear():
+    """Reset every play count in the ledger (play tracking)."""
+    try:
+        cleared = ledger_clear_plays()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "cleared": cleared})
+
+
+@app.get("/api/library/album/duration")
+def api_library_album_duration():
+    """Total play time of an album (sum of cached ffprobe durations)."""
+    raw = str(request.args.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing ?path= parameter."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(raw)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    if not target.is_dir():
+        return jsonify({"ok": False, "error": "That album folder no longer exists."}), 404
+    return jsonify({"ok": True, "path": str(target), "duration": album_duration(target)})
+
+
+@app.post("/api/library/album/cover/save")
+def api_library_album_cover_save():
+    """Write the album's embedded cover art to cover.jpg/png in its folder."""
+    body = request.get_json(silent=True) or {}
+    raw = str(body.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing album path."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(raw)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    ok, msg = save_album_cover(target)
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 400
+    return jsonify({"ok": True, "path": msg})
+
+
 @app.get("/api/library/index")
 def api_library_index():
     """Export a full library track index as CSV (?fmt=csv) or an HTML page
@@ -1600,8 +1709,25 @@ def api_stats():
     return jsonify({"ok": True, **stats})
 
 
-@app.post("/api/library/import")
-def api_library_import():
+@app.post("/api/releases/ignore")
+def api_releases_ignore():
+    """Hide an artist (or all releases of one name) from the Releases panel.
+    Body: {"artist": "…", "action": "add" | "remove"}."""
+    body = request.get_json(silent=True) or {}
+    artist = str(body.get("artist") or "").strip()
+    action = str(body.get("action") or "add")
+    if not artist:
+        return jsonify({"ok": False, "error": "No artist given."}), 400
+    ignored = [str(a) for a in (config.get("releases_ignored") or []) if str(a).strip()]
+    lowered = {a.lower() for a in ignored}
+    if action == "remove":
+        ignored = [a for a in ignored if a.lower() != artist.lower()]
+    else:
+        if artist.lower() not in lowered:
+            ignored.append(artist)
+    config.set("releases_ignored", ignored)
+    return jsonify({"ok": True, "ignored": ignored})
+
     """Import tracks from an Apple Music/iTunes library.xml and match them on
     the Apple Music catalog (optionally restricted to one playlist)."""
     body = request.get_json(silent=True) or {}
@@ -1700,7 +1826,9 @@ def api_new_releases():
         lib = scan_library(expand_path(config.get("output_path")))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-    artists = [a["name"] for a in lib.get("artists", [])][:12]
+    ignored = {str(a).strip().lower() for a in (config.get("releases_ignored") or []) if str(a).strip()}
+    artists = [a["name"] for a in lib.get("artists", [])
+               if a["name"].strip().lower() not in ignored][:12]
     releases = []
     for artist in artists:
         try:
@@ -1983,6 +2111,24 @@ def api_jobs():
     return jsonify({"jobs": manager.list(), "paused": manager.paused})
 
 
+@app.post("/api/jobs/reorder")
+def api_jobs_reorder():
+    """Move a queued job up/down in the queue (delta: -1 up, +1 down)."""
+    body = request.get_json(silent=True) or {}
+    job_id = str(body.get("job_id") or "").strip()
+    try:
+        delta = int(body.get("delta", 0))
+    except (TypeError, ValueError):
+        delta = 0
+    if not job_id or delta not in (-1, 1):
+        return jsonify({"ok": False, "error": "job_id and delta (-1|1) are required."}), 400
+    ok, msg = manager.reorder(job_id, delta)
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 400
+    return jsonify({"ok": True, "message": msg})
+
+
+
 @app.get("/api/jobs/<job_id>")
 def api_job_detail(job_id: str):
     job = manager.get(job_id)
@@ -2053,6 +2199,38 @@ def api_logs():
         except OSError:
             pass
     return jsonify({"ok": True, "file": name, "lines": lines})
+
+
+@app.get("/api/logs/download")
+def api_logs_download():
+    """Download a full project log file as an attachment (no tailing)."""
+    name = str(request.args.get("file", "app"))
+    if name not in ("app", "launcher"):
+        return jsonify({"ok": False, "error": "unknown log file"}), 400
+    path = LOG_DIR / f"{name}.log"
+    if not path.exists():
+        return jsonify({"ok": False, "error": "log file not found"}), 404
+    return send_file(path, as_attachment=True, download_name=f"{name}.log", mimetype="text/plain")
+
+
+@app.post("/api/config/reset")
+def api_config_reset():
+    """Reset every setting to its default (output folder + cookies preserved
+    so the app stays usable; everything else is restored to stock)."""
+    defaults = dict(DEFAULT_CONFIG)
+    # Machine-specific setup facts survive the reset — output folder, cookie
+    # files, the wrapper URL and the wrapper ON/OFF state (otherwise ALAC/
+    # Atmos downloads would silently start failing after a reset), the chosen
+    # Apple engine, and the persisted releases ignore list + accent colour.
+    for keep in ("output_path", "cookies_path", "spotify_cookies_path",
+                 "ytm_cookies_path", "wrapper_url", "use_wrapper",
+                 "apple_engine", "releases_ignored", "accent_color"):
+        defaults[keep] = config.get(keep)
+    config.data = defaults
+    config.save()
+    _restart_watcher_if_needed()
+    return jsonify({"ok": True, "config": config.data})
+
 
 
 def main():

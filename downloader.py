@@ -222,6 +222,13 @@ DEFAULT_CONFIG = {
     "remote_token": "",
     # Auto-delete empty folders after a download batch finishes.
     "auto_clean_empty": False,
+    # Watch folder: comma-separated filename substrings to ignore (e.g.
+    # ".DS_Store", ".part"). Matched case-insensitively against the file name.
+    "watch_ignore": "",
+    # Play a short in-browser chime when a download batch finishes.
+    "chime_on_done": True,
+    # Artists hidden from the Releases panel (persisted ignore list).
+    "releases_ignored": [],
 }
 
 CODEC_LABELS = {
@@ -1093,6 +1100,10 @@ class Job:
         self.engine = url_engine(urls[0]) if urls else "apple"  # apple|spotify|youtube
         self.attempts = 0  # attempts so far (auto-retry accounting)
         self._retry_delay: float | None = None  # seconds before the next attempt
+        # True while the job is sleeping between auto-retry attempts. Backoff
+        # sleeps OUTSIDE the concurrency slot, so the queue gate must not let
+        # a backoff job block the jobs behind it.
+        self._in_backoff = False
         self._cancel_event = threading.Event()
         self._lock = threading.Lock()
         self._done = threading.Event()
@@ -2319,6 +2330,8 @@ def read_audio_tags(path: Path) -> dict:
             "albumartist": _tag_field(f, "albumartist"),
             "track": _tag_field(f, "tracknumber"),
             "date": _tag_field(f, "date")[:4],
+            "genre": _tag_field(f, "genre"),
+            "disc": _tag_field(f, "discnumber"),
         }
     except Exception:
         return {}
@@ -2338,7 +2351,8 @@ def write_audio_tags(path: Path, fields: dict) -> tuple[bool, str]:
         if f is None:
             return False, "Unsupported or corrupt audio file."
         mapping = {"title": "title", "artist": "artist", "album": "album",
-                   "albumartist": "albumartist", "track": "tracknumber", "date": "date"}
+                   "albumartist": "albumartist", "track": "tracknumber", "date": "date",
+                   "genre": "genre", "disc": "discnumber"}
         changed = []
         for field, tag in mapping.items():
             if field not in fields:
@@ -2711,9 +2725,11 @@ class WatchFolder:
         if not root.is_dir():
             return
         done_dir = root / ".done"
+        ignore = [s.strip().lower() for s in str(self.config.get("watch_ignore") or "").split(",") if s.strip()]
         try:
             candidates = [p for p in root.iterdir()
-                          if p.is_file() and p.suffix.lower() in (".txt", ".m3u", ".url", ".list", "")]
+                          if p.is_file() and p.suffix.lower() in (".txt", ".m3u", ".url", ".list", "")
+                          and not any(ig and ig in p.name.lower() for ig in ignore)]
         except OSError:
             return
         for p in sorted(candidates):
@@ -3258,6 +3274,7 @@ class JobManager:
     def __init__(self, config: Config):
         self.config = config
         self.jobs: dict[str, Job] = {}
+        self._queue_order: list[str] = []  # queued job ids, in queue order (reorderable)
         self._lock = threading.Lock()
         self._latest_id = 0
         self._sem = threading.Semaphore(max(1, int(config.get("max_concurrent") or 2)))
@@ -3347,15 +3364,29 @@ class JobManager:
                 if job.manager:
                     job.manager._finish(job)
                 return
-            # Non-blocking acquire so a cancelled job doesn't wait out a long
-            # running batch before its status flips (and its _done event sets).
-            while not self._sem.acquire(blocking=False):
+            # Queue-order gate + slot acquire. A ▲/▼ reorder must change
+            # *execution* order, not just the list view — so a job only tries
+            # for a slot while it is the front-most still-queued job. When a
+            # slot frees up, the current front job wins it, never a later one
+            # that happened to be awake. The acquire is non-blocking so a
+            # cancelled job doesn't wait out a long batch before its status
+            # flips (and its _done event sets).
+            while True:
                 if job._cancel_event.is_set():
                     job.set_status("cancelled")
                     if job.manager:
                         job.manager._finish(job)
                     return
+                if not self._is_front_of_queue(job.id):
+                    time.sleep(0.25)
+                    continue
+                if self._sem.acquire(blocking=False):
+                    break
                 time.sleep(0.25)
+            # Flip to "running" the moment the slot is held — before the
+            # runner's (possibly slow) preflight — so the queue gate can let
+            # the next job in instead of waiting on a job that's mid-setup.
+            job.set_status("running")
             try:
                 if job._cancel_event.is_set():
                     job.set_status("cancelled")
@@ -3375,8 +3406,10 @@ class JobManager:
             if delay is None:
                 return
             # Backoff sleep happens OUTSIDE the semaphore: the slot is free for
-            # other jobs while this one waits to retry.
+            # other jobs while this one waits to retry. _in_backoff makes the
+            # queue gate skip this job so it can't hold up the jobs behind it.
             job._retry_delay = None
+            job._in_backoff = True
             job.set_status("queued")
             slept = 0
             while slept < delay:
@@ -3390,6 +3423,7 @@ class JobManager:
                     time.sleep(0.5)
                 time.sleep(min(5, delay - slept))
                 slept += 5
+            job._in_backoff = False
 
     def start(self, urls: list[str], options: dict | None = None) -> Job:
         options = options or {}
@@ -3398,6 +3432,7 @@ class JobManager:
         self._batch_fired = False  # new batch → the idle callback can fire again
         with self._lock:
             self.jobs[job.id] = job
+            self._queue_order.append(job.id)
             self._latest_id += 1
         t = threading.Thread(target=self._dispatch, args=(job, run_job), daemon=True)
         t.start()
@@ -3411,6 +3446,7 @@ class JobManager:
         self._batch_fired = False  # new batch → the idle callback can fire again
         with self._lock:
             self.jobs[job.id] = job
+            self._queue_order.append(job.id)
             self._latest_id += 1
         t = threading.Thread(target=self._dispatch, args=(job, run_convert_job), daemon=True)
         t.start()
@@ -3422,13 +3458,56 @@ class JobManager:
             return self.jobs.get(job_id)
 
     def list(self, limit: int = 30) -> list[dict]:
+        """Active jobs first (running, then queued in user queue order), then
+        finished jobs newest-first. Queued order is what the ▲/▼ reorder
+        buttons change."""
         with self._lock:
-            jobs = sorted(
-                self.jobs.values(),
-                key=lambda j: (j.created_at, j.id),
-                reverse=True,
-            )[:limit]
+            order_idx = {jid: i for i, jid in enumerate(self._queue_order)}
+            def _key(j: Job):
+                if j.status == "queued":
+                    return (0, order_idx.get(j.id, 10 ** 9), -j.created_at)
+                if j.status == "running":
+                    return (1, 0, -j.created_at)
+                return (2, 0, -j.created_at)
+            jobs = sorted(self.jobs.values(), key=_key)[:limit]
             return [j.summary() for j in jobs]
+
+    def _is_front_of_queue(self, job_id: str) -> bool:
+        """True when `job_id` may take a concurrency slot now: it must be the
+        earliest still-queued job per _queue_order. Jobs with no recorded
+        order (restored from disk before any reorder) are never blocked."""
+        with self._lock:
+            others = [
+                jid for jid, j in self.jobs.items()
+                if jid != job_id and j.status == "queued" and not j._in_backoff
+            ]
+            if not others:
+                return True
+            order = {jid: i for i, jid in enumerate(self._queue_order)}
+            mine = order.get(job_id)
+            if mine is None:
+                return True
+            for oid in others:
+                oi = order.get(oid)
+                if oi is not None and oi < mine:
+                    return False
+            return True
+
+    def reorder(self, job_id: str, delta: int) -> tuple[bool, str]:
+        """Move a queued job up/down in the queue (delta ±1). Returns
+        (ok, message). Running jobs are unaffected — they already started."""
+        with self._lock:
+            q = [jid for jid, j in self.jobs.items() if j.status == "queued"]
+            if job_id not in q:
+                return False, "That job isn't in the queue anymore."
+            i = q.index(job_id)
+            j = i + delta
+            if not (0 <= j < len(q)):
+                return False, "Already at the edge of the queue."
+            q[i], q[j] = q[j], q[i]
+            self._queue_order = q
+        self.save_pending()
+        return True, "Queue reordered."
 
     def clear_finished(self) -> None:
         """Remove finished jobs from the list (thread-safe)."""
@@ -4718,6 +4797,96 @@ def ledger_play(output_dir: str, path: str) -> bool:
         return True
     except sqlite3.Error:
         return False
+
+
+def ledger_most_played(output_dir: str, limit: int = 12) -> list[dict]:
+    """Most-played tracks from the ledger (play_count DESC, then most recent).
+    Rows that no longer exist on disk are dropped. Same shape as
+    ledger_recent_plays so the UI can reuse its row renderer."""
+    output = Path(output_dir).resolve()
+    try:
+        def _q(conn):
+            rows = conn.execute(
+                "SELECT path, play_count, last_played, codec FROM tracks "
+                "WHERE play_count > 0 "
+                "ORDER BY play_count DESC, last_played DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        rows = _ledger_query(_q)
+    except sqlite3.Error:
+        return []
+    out = []
+    for r in rows:
+        p = Path(r["path"])
+        if not p.is_file():
+            continue
+        try:
+            rel = str(p.relative_to(output))
+        except ValueError:
+            rel = p.name
+        out.append({
+            "path": str(p),
+            "rel": rel,
+            "name": p.stem,
+            "play_count": r["play_count"] or 0,
+            "last_played": r["last_played"],
+            "codec": r["codec"] or "",
+        })
+    return out
+
+
+def ledger_clear_plays() -> int:
+    """Reset every play count in the ledger. Returns how many tracks had
+    plays before the reset (0 = nothing to clear)."""
+    try:
+        def _w(conn):
+            n = conn.execute("SELECT COUNT(*) FROM tracks WHERE play_count > 0").fetchone()[0]
+            conn.execute("UPDATE tracks SET play_count = 0, last_played = NULL")
+            conn.commit()
+            return n
+        return _ledger_query(_w)
+    except sqlite3.Error:
+        return 0
+
+
+def album_duration(album_dir: Path) -> float:
+    """Total play time (seconds) of every audio file in an album folder,
+    summed from cached ffprobe durations. Returns 0 when nothing is probeable."""
+    total = 0.0
+    try:
+        files = [p for p in album_dir.iterdir()
+                 if p.is_file() and p.suffix.lower() in AUDIO_EXTS]
+    except OSError:
+        return 0.0
+    for f in files:
+        d = _probe_duration(f)
+        if d:
+            total += d
+    return round(total, 1)
+
+
+def save_album_cover(album_dir: Path) -> tuple[bool, str]:
+    """Write the album's embedded cover art to cover.jpg / cover.png in the
+    album folder (next to the tracks). Returns (ok, message)."""
+    try:
+        files = sorted(p for p in album_dir.iterdir()
+                       if p.is_file() and p.suffix.lower() in AUDIO_EXTS)
+    except OSError:
+        return False, "Could not read the album folder."
+    for f in files:
+        art = read_cover_art(f)
+        if not art:
+            continue
+        data, mime = art
+        ext = ".png" if "png" in (mime or "") else ".jpg"
+        target = album_dir / f"cover{ext}"
+        try:
+            target.write_bytes(data)
+            return True, str(target)
+        except OSError as e:
+            return False, f"Could not write cover: {e}"
+    return False, "No embedded cover art found in that album."
 
 
 def ledger_recent_plays(output_dir: str, limit: int = 12) -> list[dict]:
