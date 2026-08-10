@@ -85,8 +85,17 @@ jobs:
       - name: Checksums
         shell: bash
         run: |
+          # shasum is not installed in Git Bash on Windows runners, so use a
+          # portable Python hashlib implementation for SHA-256.
           cd dist
-          shasum -a 256 MusicHighRes-* > SHA256SUMS.txt
+          python - <<'PY'
+          import glob, hashlib
+          lines = []
+          for f in sorted(glob.glob("MusicHighRes-*")):
+              h = hashlib.sha256(open(f, "rb").read()).hexdigest()
+              lines.append(f"{h}  {f}")
+          open("SHA256SUMS.txt", "w", encoding="utf-8").write("\n".join(lines) + "\n")
+          PY
           cat SHA256SUMS.txt
 
       - name: Upload artifact
