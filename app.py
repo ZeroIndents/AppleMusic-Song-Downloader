@@ -7,8 +7,10 @@ folder. The CLI (cli.py) uses the same download manager.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re as _re
 import sys
 import threading
 import time
@@ -107,9 +109,12 @@ from downloader import (
 
 PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
-# Keep in lockstep with the CHANGELOG heading (e.g. "[1.0.0] - 2026-08-09")
+# Keep in lockstep with the CHANGELOG heading (e.g. "[1.3.0] - 2026-08-10")
 # when cutting the next release.
-VERSION = "1.2.0"
+VERSION = "1.3.0"
+
+# GitHub repo used by the in-app self-updater (/api/update/*).
+GITHUB_REPO = "ZeroIndents/AppleMusic-Song-Downloader"
 LOG_DIR = PROJECT_DIR / "logs"
 
 # Server boot timestamp — powers the header "up for …" pill (/api/status).
@@ -393,7 +398,7 @@ def _normalize_config_value(key: str, value):
             value = int(value)
         except (TypeError, ValueError):
             return None
-    elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync", "amdl_convert_keep_original", "desktop_notify", "remote_bind", "auto_clean_empty", "chime_on_done"):
+    elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync", "amdl_convert_keep_original", "desktop_notify", "remote_bind", "auto_clean_empty", "chime_on_done", "check_updates"):
         value = bool(value)
     elif key in ("max_concurrent", "auto_retry"):
         try:
@@ -2231,6 +2236,254 @@ def api_config_reset():
     _restart_watcher_if_needed()
     return jsonify({"ok": True, "config": config.data})
 
+
+
+# ---------------------------------------------------------------------------
+# In-app self-updater — lets existing installs move to a new release without
+# re-downloading: checks GitHub for the latest release, then on Apply downloads
+# the source tarball, backs up user state (config.json, data/, cookies, caches),
+# swaps the app files in place, restores the backup, and restarts the server.
+#
+# Source installs only: packaged binaries (PyInstaller .app/.exe) can't rewrite
+# themselves, so for those the UI links to the release page instead.
+# ---------------------------------------------------------------------------
+_UPDATE_CACHE: dict = {"at": 0.0, "data": None}  # (checked_at, release json)
+_UPDATE_STATE: dict = {"running": False, "phase": "", "lines": [], "error": None, "done": False}
+
+
+def _version_tuple(v: str) -> tuple:
+    return (tuple(int(x) for x in _re.findall(r"\d+", v or "")[:3]) + (0, 0, 0))[:3]
+
+
+def _github_latest_release(force: bool = False) -> dict | None:
+    now = time.time()
+    if not force and _UPDATE_CACHE["data"] and now - _UPDATE_CACHE["at"] < 1800:
+        return _UPDATE_CACHE["data"]
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+            headers={"User-Agent": "Music-High-Res", "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+        _UPDATE_CACHE["data"] = data
+        _UPDATE_CACHE["at"] = now
+        return data
+    except Exception:
+        return None
+
+
+@app.get("/api/update/check")
+def api_update_check():
+    """Is a newer Music High Res release available? Also reports a running
+    update's progress lines. Cached 30 min against GitHub's API."""
+    if not config.get("check_updates"):
+        return jsonify({
+            "ok": True, "current": VERSION, "latest": VERSION, "available": False,
+            "disabled": True, "source_install": not getattr(sys, "frozen", False),
+            "state": {**{k: _UPDATE_STATE[k] for k in ("running", "phase", "error", "done")}, "lines": _UPDATE_STATE["lines"][-20:]},
+        })
+    rel = _github_latest_release()
+    if not rel:
+        return jsonify({
+            "ok": False, "error": "Could not reach GitHub (offline or rate-limited).",
+            "current": VERSION, "available": False,
+            "state": {**{k: _UPDATE_STATE[k] for k in ("running", "phase", "error", "done")}, "lines": _UPDATE_STATE["lines"][-20:]},
+        })
+    tag = (rel.get("tag_name") or "").lstrip("v")
+    available = _version_tuple(tag) > _version_tuple(VERSION)
+    return jsonify({
+        "ok": True,
+        "current": VERSION,
+        "latest": tag,
+        "available": available,
+        "name": rel.get("name"),
+        "url": rel.get("html_url"),
+        "published": rel.get("published_at"),
+        "notes": (rel.get("body") or "")[:4000],
+        "source_install": not getattr(sys, "frozen", False),
+        "state": {**{k: _UPDATE_STATE[k] for k in ("running", "phase", "error", "done")}, "lines": _UPDATE_STATE["lines"][-20:]},
+    })
+
+
+@app.post("/api/update/apply")
+def api_update_apply():
+    """Download the latest release and replace this install in place, preserving
+    settings, the library ledger, cookies, and the output folder. Restarts the
+    server automatically when finished."""
+    if getattr(sys, "frozen", False):
+        return jsonify({"ok": False, "error": "This is a packaged app — download the new version from the release page instead."}), 400
+    if _UPDATE_STATE["running"]:
+        return jsonify({"ok": False, "error": "An update is already in progress."}), 409
+    rel = _github_latest_release(force=True)
+    if not rel:
+        return jsonify({"ok": False, "error": "Could not reach GitHub to fetch the latest release."}), 502
+    tag = (rel.get("tag_name") or "").lstrip("v")
+    if not (_version_tuple(tag) > _version_tuple(VERSION)):
+        return jsonify({"ok": False, "error": f"Already on the latest version ({VERSION})."}), 400
+    tarball = rel.get("tarball_url")
+    if not tarball:
+        return jsonify({"ok": False, "error": "Release has no source tarball to download."}), 400
+    if manager.any_active():
+        return jsonify({"ok": False, "error": "Downloads are still running — finish or cancel them first."}), 409
+    _UPDATE_STATE.update(running=True, phase="starting", lines=["Preparing update…"], error=None, done=False)
+    threading.Thread(target=_run_update, args=(tarball, tag), daemon=True).start()
+    return jsonify({"ok": True, "started": True})
+
+
+def _run_update(tarball_url: str, tag: str) -> None:
+    """Background updater: backup → download → swap → restore → restart."""
+    import shutil
+    import subprocess
+    import tarfile
+    import tempfile
+
+    def line(s: str) -> None:
+        _UPDATE_STATE["lines"].append(s)
+        _UPDATE_STATE["lines"] = _UPDATE_STATE["lines"][-30:]
+
+    tmp = None
+    try:
+        tmp = Path(tempfile.mkdtemp(prefix="mhr-update-"))
+
+        # 1 ── Back up user state before touching anything.
+        _UPDATE_STATE["phase"] = "backup"
+        line("Backing up settings, library index & cookies…")
+        backup_dir = tmp / "backup"
+        backup_dir.mkdir()
+        for name in ("config.json", "data", "quality_cache.json", "pending_jobs.json"):
+            p = PROJECT_DIR / name
+            if p.exists():
+                if p.is_dir():
+                    shutil.copytree(p, backup_dir / name)
+                else:
+                    shutil.copy2(p, backup_dir / name)
+        for key in ("cookies_path", "ytm_cookies_path", "spotify_cookies_path"):
+            cp = config.get(key)
+            if cp:
+                p = Path(expand_path(cp))
+                if p.exists() and p.resolve().parent == PROJECT_DIR.resolve():
+                    shutil.copy2(p, backup_dir / p.name)
+
+        # 2 ── Download the source tarball.
+        _UPDATE_STATE["phase"] = "downloading"
+        line(f"Downloading v{tag} from GitHub…")
+        import urllib.request
+
+        tar_path = tmp / "update.tar.gz"
+        req = urllib.request.Request(tarball_url, headers={"User-Agent": "Music-High-Res"})
+        with urllib.request.urlopen(req, timeout=180) as r, open(tar_path, "wb") as f:
+            shutil.copyfileobj(r, f)
+
+        # 3 ── Extract safely (GitHub tarballs: single top-level Owner-Repo-sha/ dir).
+        _UPDATE_STATE["phase"] = "extracting"
+        line("Extracting…")
+        extract_dir = tmp / "src"
+        extract_dir.mkdir()
+        root_resolved = extract_dir.resolve()
+        with tarfile.open(tar_path, "r:gz") as tf:
+            for m in tf.getmembers():
+                parts = m.name.split("/", 1)
+                if len(parts) < 2 or not parts[1]:
+                    continue
+                target = (extract_dir / parts[1]).resolve()
+                # Hard containment check (not a prefix string compare): the
+                # resolved target must live strictly inside the extract dir.
+                try:
+                    target.relative_to(root_resolved)
+                except ValueError:
+                    raise RuntimeError("Unsafe path in release tarball") from None
+                if m.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                elif m.isfile():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with tf.extractfile(m) as src, open(target, "wb") as out:
+                        shutil.copyfileobj(src, out)
+        inner = next(p for p in extract_dir.iterdir() if p.is_dir())
+
+        # 4 ── Copy the new tree over the project dir (keep runtime-owned paths).
+        _UPDATE_STATE["phase"] = "installing"
+        line("Installing new app files…")
+        skip = {".venv", "wrapper-v2", "wrapper-amdl", "data", "logs",
+                "config.json", "quality_cache.json", "pending_jobs.json",
+                "Music High Res.app", ".git", "dist", "build", "__pycache__"}
+        for item in inner.iterdir():
+            if item.name in skip:
+                continue
+            dst = PROJECT_DIR / item.name
+            if item.is_dir():
+                shutil.copytree(item, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dst)
+        for pyc in PROJECT_DIR.rglob("__pycache__"):
+            shutil.rmtree(pyc, ignore_errors=True)
+
+        # 5 ── Restore user state over the fresh files.
+        _UPDATE_STATE["phase"] = "restoring"
+        line("Restoring your settings & library index…")
+        for name in ("config.json", "data", "quality_cache.json", "pending_jobs.json"):
+            b = backup_dir / name
+            if b.exists():
+                dst = PROJECT_DIR / name
+                if dst.exists():
+                    if dst.is_dir():
+                        shutil.rmtree(dst, ignore_errors=True)
+                    else:
+                        dst.unlink(missing_ok=True)
+                if b.is_dir():
+                    shutil.copytree(b, dst)
+                else:
+                    shutil.copy2(b, dst)
+        for f in backup_dir.iterdir():
+            if f.is_file() and f.name != "config.json":
+                dst = PROJECT_DIR / f.name
+                if not dst.exists():
+                    shutil.copy2(f, dst)
+
+        # 6 ── Refresh Python deps if the venv exists.
+        try:
+            from downloader import venv_bin
+        except Exception:
+            venv_bin = None
+        pip = venv_bin("pip") if venv_bin else None
+        if pip and (PROJECT_DIR / "requirements.txt").exists():
+            _UPDATE_STATE["phase"] = "deps"
+            line("Refreshing Python dependencies…")
+            try:
+                subprocess.run([pip, "install", "-q", "-r", str(PROJECT_DIR / "requirements.txt")],
+                               cwd=str(PROJECT_DIR), timeout=600, capture_output=True)
+            except Exception as e:
+                line(f"Note: dependency refresh skipped ({e})")
+
+        _UPDATE_STATE["phase"] = "restarting"
+        line("Done — restarting the app…")
+        _UPDATE_STATE["done"] = True
+        _UPDATE_STATE["running"] = False
+
+        # 7 ── Restart: this process must release the port BEFORE the new
+        # server binds, so relaunch via the detached relaunch.py helper (waits
+        # 2s, restores the ALAC wrapper that start.sh stops on app close, then
+        # starts the server).
+        env = dict(os.environ)
+        helper_cmd = [sys.executable, str(PROJECT_DIR / "relaunch.py")]
+        if os.name == "nt":
+            subprocess.Popen(helper_cmd, cwd=str(PROJECT_DIR), env=env,
+                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0))
+        else:
+            subprocess.Popen(helper_cmd, cwd=str(PROJECT_DIR), env=env,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        time.sleep(1.0)
+        os._exit(0)
+    except Exception as e:
+        _UPDATE_STATE["error"] = str(e)
+        _UPDATE_STATE["phase"] = "error"
+        _UPDATE_STATE["running"] = False
+        line(f"Update failed: {e}")
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main():

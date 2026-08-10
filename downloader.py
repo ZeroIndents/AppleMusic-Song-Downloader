@@ -229,6 +229,9 @@ DEFAULT_CONFIG = {
     "chime_on_done": True,
     # Artists hidden from the Releases panel (persisted ignore list).
     "releases_ignored": [],
+    # In-app self-updater: check GitHub for a newer release and show the
+    # header pill (source installs can update in place via /api/update/apply).
+    "check_updates": True,
 }
 
 CODEC_LABELS = {

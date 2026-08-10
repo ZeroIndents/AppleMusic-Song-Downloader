@@ -227,6 +227,25 @@ Original `.m4a` files are always kept; a re-run skips files that already have a 
 
 ---
 
+## ⬆ Updating — no need to delete anything
+
+Two ways to move to a newer release, both **preserve your settings, cookies,
+library index, and download history**:
+
+1. **In-app (recommended, v1.3+)**: the header shows an **⬆ pill** when a
+   newer release exists. Click it → **Update now** — the app downloads the
+   release, backs up `config.json` + the ledger, swaps its own files in place,
+   and restarts itself. You never touch the folder again.
+2. **Manual (any version)**: download the new release archive for your
+   platform and **copy its contents over your existing folder** — keep your
+   `config.json`, `data/`, `cookies.txt` and `wrapper-v2/`/`wrapper-amdl/`
+   dirs (the archive contains only app code). Then just start the app as
+   usual — your output folder, quality settings and wrapper session all carry
+   over untouched.
+
+> Updating never touches `~/Music/Apple Music` (or whatever your output folder
+> is) — your library stays exactly where it is.
+
 ## 🔁 After a reboot — it's ONE click
 
 Nothing needs to be re-setup. Docker Desktop **auto-starts at login** (LaunchAgent installed during setup) and **stays running**. The wrapper runs **only while the app is open** — the launcher starts it when you launch the app and stops it again when you close the app:

@@ -770,6 +770,7 @@ if ("serviceWorker" in navigator) {
       <div class="pill click" id="pill-install" style="display:none" title="Install Music High Res as an app">📲 Install</div>
       <div class="pill click" id="pill-theme" title="Toggle light/dark theme (keyboard: t)">🌓</div>
       <div class="pill" id="pill-uptime" title="Server uptime">🕐 <span class="val">…</span></div>
+      <div class="pill click warn" id="pill-update" style="display:none" title="A new version of Music High Res is available — click to update">⬆ <span class="val"></span></div>
     </div>
   </header>
 
@@ -1201,6 +1202,7 @@ if ("serviceWorker" in navigator) {
       </div>
       <div class="field">
         <label class="toggle"><input type="checkbox" id="f-chime"><span class="switch"></span>Play a chime when a download batch finishes</label>
+        <label class="toggle"><input type="checkbox" id="f-check-updates"><span class="switch"></span>Check for app updates (⬆ pill in the header)</label>
       </div>
       <div class="field">
         <label>Accent colour</label>
@@ -2140,6 +2142,7 @@ function loadSettings(cfg) {
   $("f-watch").value = cfg.watch_folder || "";
   $("f-watch-ignore").value = cfg.watch_ignore || "";
   $("f-chime").checked = cfg.chime_on_done !== false;
+  $("f-check-updates").checked = cfg.check_updates !== false;
   $("f-convert-dir").value = cfg.output_path || "";
 }
 function collectSettings() {
@@ -2205,6 +2208,7 @@ function collectSettings() {
     watch_folder: $("f-watch").value.trim(),
     watch_ignore: $("f-watch-ignore").value.trim(),
     chime_on_done: $("f-chime").checked,
+    check_updates: $("f-check-updates").checked,
   };
 }
 function toggleAmdlSettings() {
@@ -5394,6 +5398,111 @@ $("log-file-seg").addEventListener("click", (e) => {
 $("btn-log-refresh").addEventListener("click", refreshSyslog);
 window.addEventListener("resize", segThumbs);
 
+// ── In-app updater ────────────────────────────────────────────────────────
+// Checks GitHub for a newer Music High Res release (header ⬆ pill) and, on
+// source installs, applies the update in place (backup → download → swap →
+// restore → restart) with a live progress modal.
+let _updateChecked = false;
+
+async function checkForUpdate() {
+  if (_updateChecked) return;
+  _updateChecked = true;
+  try {
+    const data = await (await fetch("/api/update/check")).json();
+    if (!data.ok || !data.available) return;
+    const pill = $("pill-update");
+    if (!pill) return;
+    pill.querySelector(".val").textContent = "v" + data.latest;
+    pill.style.display = "";
+    pill.onclick = () => showUpdateModal(data);
+  } catch (e) { /* offline — ignore */ }
+}
+
+function showUpdateModal(data) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:560px">
+    <h3>⬆ Update available — v${data.latest}</h3>
+    <div class="muted-sm">You're on <b>v${data.current}</b>. ${data.source_install
+      ? "This will update your install <b>in place</b> — settings, library ledger, cookies and downloads are preserved, and the app restarts itself."
+      : "This is a packaged app — download the new build from the release page and replace it."}</div>
+    <div id="update-notes" style="max-height:220px; overflow-y:auto; margin:10px 0; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12.5px; white-space:pre-wrap; font-family:var(--mono)"></div>
+    <div id="update-progress" style="display:none; max-height:150px; overflow-y:auto; margin:10px 0; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; font-family:var(--mono); white-space:pre-wrap"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="upd-cancel">${data.source_install ? "Not now" : "Close"}</button>
+      ${data.source_install
+        ? `<button class="btn small" id="upd-go">⬇ Update now</button>`
+        : `<a class="btn small" id="upd-go" href="${data.url || "#"}" target="_blank" rel="noopener">Open release page</a>`}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  back.querySelector("#update-notes").textContent = (data.notes || "No release notes.").replace(/## /g, "").slice(0, 1800);
+  const cancel = back.querySelector("#upd-cancel");
+  cancel.onclick = () => back.remove();
+  back.addEventListener("click", (e) => { if (e.target === back) back.remove(); });
+  const go = back.querySelector("#upd-go");
+  if (!data.source_install) return; // link button — done
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = "Updating…";
+    cancel.style.display = "none";
+    back.querySelector("#update-progress").style.display = "";
+    try {
+      const res = await (await fetch("/api/update/apply", { method: "POST" })).json();
+      if (!res.ok) { toast(res.error || "Update failed to start.", "err"); go.disabled = false; go.textContent = "⬇ Update now"; return; }
+      pollUpdateProgress(back);
+    } catch (e) {
+      toast("Could not start the update.", "err");
+      go.disabled = false; go.textContent = "⬇ Update now";
+    }
+  };
+}
+
+function pollUpdateProgress(back) {
+  const box = back.querySelector("#update-progress");
+  const seen = new Set();
+  const tick = async () => {
+    try {
+      const data = await (await fetch("/api/update/check")).json();
+      const state = data.state || {};
+      (state.lines || []).forEach(l => { if (!seen.has(l)) { seen.add(l); box.textContent += "\n" + l; } });
+      if (state.error) { box.textContent += "\n✗ " + state.error; return; }
+      if (state.running) { setTimeout(tick, 1200); return; }
+      if (state.done || state.phase === "restarting") {
+        box.textContent += "\n↻ Waiting for the app to come back…";
+        waitForReload(back);
+        return;
+      }
+    } catch (e) { /* server may be restarting */ }
+    setTimeout(tick, 1200);
+  };
+  tick();
+}
+
+function waitForReload(back) {
+  // The old server is still alive for ~1s after the update finishes (it must
+  // release the port before the new one binds). So first wait for it to go
+  // DOWN, then wait for it to come back UP, then reload — reloading on the
+  // first OK would hit the dying process.
+  let phase = "down";   // waiting for the old server to disappear
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    let up = false;
+    try { up = (await fetch("/api/status")).ok; } catch (e) { up = false; }
+    if (phase === "down") {
+      if (!up) { phase = "up"; tries = 0; }        // old server gone
+    } else {
+      if (up) {                                     // new server listening
+        clearInterval(iv);
+        back.remove();
+        toast("✅ Updated — reloading…", "ok");
+        setTimeout(() => location.reload(), 600);
+      }
+    }
+    if (tries > 60) clearInterval(iv);              // give up silently
+  }, 1500);
+}
+
 (async function init() {
   // Restore the saved theme before first paint.
   let savedTheme = "dark";
@@ -5405,6 +5514,7 @@ window.addEventListener("resize", segThumbs);
     state.status = status; state.config = cfg;
     applyPlatform(status);
     renderPills(status);
+    checkForUpdate();
     refreshOnboarding();
     loadSettings(cfg);
     if (typeof initAccentUI === "function") initAccentUI(cfg);

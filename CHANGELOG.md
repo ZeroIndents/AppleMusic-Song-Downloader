@@ -7,9 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions loosely follow [Semantic Versioning](https://semver.org/).
 - **[Unreleased]** — changes in the working tree not yet released.
 
-## [Unreleased]
+## [1.3.0] - 2026-08-10
 
-### Added — 30 small/medium features (working tree, unreleased)
+### Added — 30 small/medium features
+- **⬆ In-app updater** — the header shows a ⬆ pill when a newer Music High Res
+  release exists; one click downloads it and updates **in place**, preserving
+  your settings, library ledger, cookies and download history, then restarts
+  the app automatically (`/api/update/check`, `/api/update/apply`). Disable
+  with Settings → **Check for app updates**. Packaged binaries link to the
+  release page instead (`check_updates`).
 - **Queue reorder** — queued jobs get ▲/▼ buttons; the backend keeps a queue
   order that controls *actual execution order* (a concurrency gate only lets
   the front-most queued job take a slot, so ▲/▼ changes who runs next, not
@@ -73,9 +79,7 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 
 ---
 
-## [Unreleased]
-
-### Added
+### Added — v1.2-era library features (included in 1.3.0)
 
 - **🌓 Light / dark theme** — one-click toggle in the header (or press **t**);
   the whole palette is CSS-variable driven, and your choice is remembered
