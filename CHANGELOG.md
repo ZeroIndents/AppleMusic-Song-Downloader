@@ -16,6 +16,125 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 
 ## [Unreleased]
 
+### Added
+
+- **🧠 MusicBrainz auto-tagging** — per-album and whole-library background
+  task that matches every track against the MusicBrainz database (by title +
+  primary artist + duration) and writes canonical title/artist/year tags
+  (respecting MusicBrainz's 1 req/s rate limit). Buttons on each album row
+  and in the Library toolbar.
+- **📡 Media-server scan presets** — Settings now has a real **Navidrome /
+  Plex / Jellyfin** picker (URL + token + Plex section). The batch-finished
+  hook and a new 📡 Scan now button call the server's actual scan API
+  (`/api/scan`, `/library/sections/<id>/refresh`, `/Library/Refresh`) instead
+  of a raw webhook (which stays as the fallback).
+- **✓ owned catalog badges + ⬇ Download missing** — 🔍 Search results and
+  artist discographies now show green "✓ owned n" badges straight from the
+  ledger, and each discography gets a one-click **⬇ Download n missing**
+  button that queues every album you don't own.
+- **🌐 Remote access mode** — Settings toggle to bind on all interfaces
+  (phone/PWA control from the same Wi-Fi) plus an optional **access token**
+  that gates every `/api/*` call (`?token=` or `X-MHR-Token`); the UI
+  prompts for it once and remembers it.
+- **Queue controls** — the Downloads card gets ⏸ **Pause** (holds queued
+  jobs, running ones finish), ▶ **Resume** and ✕ **Cancel all**.
+- **⤓ .m3u exports** — whole-library playlist plus a per-album ⤓ button on
+  every album row (absolute paths, #EXTINF headers).
+- **📼 CUE sheets** — per-album button that writes a standard `.cue`
+  (PERFORMER/TITLE/FILE/TRACK/INDEX with cumulative offsets) from embedded
+  tags + probed durations.
+- **📜 In-app Logs viewer** — tail `app.log` and `launcher.log` right in the
+  UI (the endpoint existed; now there's a button + modal).
+- **♻ Restore settings from backup** — the Import panel accepts the exported
+  `music-high-res-backup.json` and reapplies its config (known keys only;
+  the token is never restored).
+- **🗑 Empty-folder cleanup** — Library button that lists folders with no
+  files at all and deletes them, plus an optional **auto-clean after
+  batches** setting.
+
+### Added
+
+- **Artist discography in 🔍 Search** — the catalog search now has an
+  **Artists** entity; clicking 📀 Discography lists every album by that artist
+  (iTunes Lookup) and adds any of them to the download list directly.
+- **⬆ Lossy → Lossless upgrade** — the Library toolbar's ⬆ Upgrade button
+  lists every album whose best file is lossy (AAC/MP3/OGG) with its ledger
+  source link, and re-queues each at **ALAC with overwrite** in one click.
+- **Per-job overwrite** — an "Overwrite existing" toggle next to Download
+  forces a re-download of existing files for that batch only (and is
+  preserved on ↻ Retry). Overwrite jobs skip the ledger delta filter.
+- **Multi-disc file name template** (gamdl `--multi-disc-file-template`) —
+  separate `{disc:02d}-{track:02d} …` layout for multi-disc releases,
+  falling back to the single-disc template.
+- **Votify AAC tiers** — Spotify quality now exposes `aac-medium`/`aac-high`
+  plus the FLAC-in-MP4 tiers; legacy `160`/`320` labels are mapped to
+  `vorbis-medium`/`vorbis-high` automatically.
+
+### Fixed
+
+- **Every Spotify download crashed** — the app shipped kbps labels (`160`,
+  `320,160`) that votify's CLI rejects with a usage error. Values are now
+  sanitized against votify's real enum (with legacy-label mapping) and the
+  default is `vorbis-medium`.
+- **ReplayGain + cover upgrade skipped tagless MP3s** — both writers now
+  create an ID3 container when the file has none, so TXXX gain tags and APIC
+  art land on any MP3.
+- **Smart-playlist quality filter mismatches** — codec names are normalized
+  (`m4a`/`mp4` → `aac`, `vorbis`/`opus` → `ogg`, `pcm_*` → `wav`) so "AAC"
+  and "OGG" filters actually match their files; WAV now counts as lossless
+  in the quality histogram and quality badges render `WAV` instead of
+  `PCM_S16LE`.
+- **Artist quality badge showed stale data under quality/recent filters** —
+  it's recomputed from the filtered album list, and WAV albums display
+  correctly.
+- **Lossy→lossless upgrade silently no-oped with delta-sync on** — overwrite
+  jobs now bypass the ledger delta filter.
+
+### Added
+
+- **ReplayGain scan** — the Library's 🎚 ReplayGain button measures every
+  track (ffmpeg EBU R128) and writes track + album `REPLAYGAIN_*` tags into
+  FLAC/ALAC/AAC/MP3/OGG — normalizes playback volume across Plex/Jellyfin/
+  Navidrome. Runs as a background task with a live status toast.
+- **LRCLIB lyrics backfill** — the Library's 💬 Lyrics button fetches free
+  synced lyrics from lrclib.net for tracks missing a `.lrc` sidecar.
+- **Quality histogram** — the 📊 Stats panel now shows per-file codec,
+  bit-depth and sample-rate distributions plus the lossless/lossy split.
+- **Download history** — Stats adds a by-month breakdown of everything the
+  SQLite ledger recorded, and the 📒 Ledger panel can export the whole ledger
+  as CSV or JSON.
+- **Apple Music catalog search** — 🔍 Search queries the iTunes Search API
+  for albums/songs and adds links straight to the download list (no link
+  hunting) — plus ⭐ one-click save to the new wishlist.
+- **Wishlist** — ⭐ panel to save links for later and queue them all with one
+  click (from catalog search, album rows and more).
+- **Smart playlists** — ▶ panel with saved filters (artist / album / year /
+  quality / recently added / min tracks), live preview counts, and export to
+  `Playlists/Smart/{name}.m3u`.
+- **Bulk tag editor** — check albums in the Library, then ✎ Edit tags applies
+  any filled field to every track in the selection at once.
+- **Hi-res cover upgrade** — the 📷 button on any album re-fetches its cover
+  at 1200px+ from the iTunes catalog and re-embeds it into every track.
+- **Album source links** — 🔗 on an album row opens the original Apple Music
+  page (from the ledger's recorded URL).
+- **Engine surface** (Settings): gamdl file-name template, compilation
+  folder template, exclude-tags, date-tag template, music-video remux
+  (m4v/mp4), lyrics format picker (lrc/srt/vtt/ttml), gytmdl PO-token +
+  file template, full gytmdl itag list (48k–256k + Opus), Spotify FLAC
+  lossless tiers + `.wvd` path, and amdl convert-after-download
+  (FLAC/MP3/Opus + keep-original).
+- **Desktop notifications** — optional native OS notification when a
+  download batch finishes (macOS / Windows toast / Linux notify-send), even
+  with the browser closed.
+- **Settings presets** — save named bundles of the download settings and
+  apply them in one click (e.g. “home server” vs “portable”).
+- **PWA shell** — installable app: manifest, service worker, generated
+  icons, and a 📲 Install pill.
+- **Library filters** — quality (lossless/lossy/codec) and recently-added
+  (7/30/90 days) dropdowns, plus a NEW badge on albums added in the last
+  14 days.
+- **Releases** — release workflows now ship a `SHA256SUMS.txt` per asset.
+
 ### Fixed
 
 - **APK setup failure hint** — `setup_wrapper.sh` now explains *why* Apple

@@ -4,7 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Music High Res — Apple Music grabber</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d0d14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Music HR">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23fa2d48'/%3E%3Cstop offset='.55' stop-color='%23af52de'/%3E%3Cstop offset='1' stop-color='%235e5ce6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cg fill='%23fff' transform='rotate(-8 32 34)'%3E%3Cellipse cx='17' cy='40' rx='9.4' ry='6.8' transform='rotate(-24 17 40)'/%3E%3Cellipse cx='46' cy='33' rx='9.4' ry='6.8' transform='rotate(-24 46 33)'/%3E%3Crect x='14.9' y='10.5' width='4.2' height='28' rx='2.1'/%3E%3Crect x='43.9' y='10.5' width='4.2' height='21' rx='2.1'/%3E%3Crect x='14.4' y='9.8' width='34.2' height='5.6' rx='2.8'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+/* PWA shell: register the service worker (precache + offline shell). */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function () {});
+  });
+}
+</script>
 <style>
   :root {
     --bg: #0d0d14;
@@ -278,6 +293,11 @@
   }
   .btn.ghost::after { display: none; }
   .btn.ghost:hover:not(:disabled) { filter: brightness(1.2); box-shadow: none; }
+  .btn.danger {
+    background: rgba(255,69,58,.12); border: 1px solid rgba(255,69,58,.4);
+    color: #ffb3ad; box-shadow: none;
+  }
+  .btn.danger:hover:not(:disabled) { background: rgba(255,69,58,.2); filter: brightness(1.1); }
   .btn.small { padding: 7px 14px; font-size: 12.5px; border-radius: 9px; }
 
   .spinner {
@@ -659,6 +679,7 @@
       <div class="pill" id="pill-wrapper"><span class="dot"></span>Wrapper</div>
       <div class="pill" id="pill-flac"><span class="dot"></span>Auto-FLAC</div>
       <div class="pill click" id="pill-setup" title="Setup checklist — click to open"><span class="dot"></span>Setup <span class="val">…</span></div>
+      <div class="pill click" id="pill-install" style="display:none" title="Install Music High Res as an app">📲 Install</div>
     </div>
   </header>
 
@@ -673,6 +694,9 @@
         <button data-codec="aac-web">AAC 256</button>
         <button data-codec="atmos">Dolby Atmos</button>
       </div>
+      <label class="toggle" title="Re-download files that already exist (replaces them)" style="margin-top:2px">
+        <input type="checkbox" id="f-overwrite"><span class="switch"></span><span>Overwrite existing</span>
+      </label>
       <button class="btn" id="btn-download"><span id="btn-label">Download</span></button>
       <button class="btn ghost" id="btn-settings-toggle">⚙ Settings</button>
     </div>
@@ -688,14 +712,44 @@
     </h2>
     <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap">
       <input type="text" id="lib-search" placeholder="Search artists, albums, playlists…" style="flex:1; min-width:200px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 12px; font-size:13px; font-family:var(--mono); outline:none">
+      <select id="lib-q" title="Filter albums by quality" style="background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 10px; font-size:12.5px; font-family:var(--mono); outline:none">
+        <option value="">All quality</option>
+        <option value="lossless">Lossless only</option>
+        <option value="lossy">Lossy only</option>
+        <option value="flac">FLAC</option>
+        <option value="alac">ALAC</option>
+        <option value="aac">AAC</option>
+      </select>
+      <select id="lib-recent" title="Filter albums by when they were added" style="background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 10px; font-size:12.5px; font-family:var(--mono); outline:none">
+        <option value="0">All time</option>
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
       <button class="btn ghost small" id="btn-lib-releases" title="New releases from your artists">✨ Releases</button>
       <button class="btn ghost small" id="btn-lib-dupes" title="Find duplicate files">Duplicate finder</button>
       <button class="btn ghost small" id="btn-lib-smart-dupes" title="Same song, different file (audio fingerprint)">🎧 Smart dupes</button>
       <button class="btn ghost small" id="btn-lib-cleanup" title="Same track in multiple formats (FLAC + ALAC) — delete the ones you don't want">🧹 Cleanup</button>
-      <button class="btn ghost small" id="btn-lib-stats" title="Library dashboard stats">📊 Stats</button>
+      <button class="btn ghost small" id="btn-lib-stats" title="Library dashboard stats + history + quality histogram">📊 Stats</button>
       <button class="btn ghost small" id="btn-lib-ledger" title="SQLite ledger of everything downloaded — the authoritative 'do I own this?' index">📒 Ledger</button>
+      <button class="btn ghost small" id="btn-lib-search" title="Search the Apple Music catalog and queue links without leaving the app">🔍 Search</button>
+      <button class="btn ghost small" id="btn-lib-playlists" title="Saved smart-playlist filters (artist / year / quality / recent) → export .m3u">▶ Smart playlists</button>
+      <button class="btn ghost small" id="btn-lib-wishlist" title="Links saved for later">⭐ Wishlist</button>
+      <button class="btn ghost small" id="btn-lib-replaygain" title="Write ReplayGain loudness tags (EBU R128) across the whole library">🎚 ReplayGain</button>
+      <button class="btn ghost small" id="btn-lib-lyrics" title="Fetch missing lyrics from LRCLIB (free synced-lyrics API)">💬 Lyrics</button>
+      <button class="btn ghost small" id="btn-lib-upgrade" title="Albums you only have in lossy quality — re-download them lossless">⬆ Upgrade</button>
+      <button class="btn ghost small" id="btn-lib-mb" title="Auto-fix track tags from MusicBrainz (whole library)">🧠 MusicBrainz</button>
+      <button class="btn ghost small" id="btn-lib-m3u" title="Export the whole library as a .m3u playlist">⤓ .m3u</button>
+      <button class="btn ghost small" id="btn-lib-empty" title="Find and delete empty folders">🗑 Empty dirs</button>
+      <button class="btn ghost small" id="btn-lib-logs" title="View app and launcher logs">📜 Logs</button>
+      <button class="btn ghost small" id="btn-lib-scan" title="Trigger a scan on your media server now">📡 Scan now</button>
       <button class="btn ghost small" id="btn-lib-import" title="Import an Apple Music library.xml">📥 Import</button>
       <button class="btn ghost small" id="btn-lib-export" title="Download a JSON backup">⬇ Backup</button>
+    </div>
+    <div id="bulk-bar" style="display:none; align-items:center; gap:10px; margin-bottom:10px; background:rgba(175,82,222,.1); border:1px solid rgba(175,82,222,.35); border-radius:10px; padding:8px 12px; font-size:12.5px">
+      <span id="bulk-count">0 selected</span>
+      <button class="btn ghost small" id="btn-bulk-edit">✎ Edit tags</button>
+      <button class="btn ghost small" id="btn-bulk-clear">Clear</button>
     </div>
     <div id="lib-extra" style="display:none"></div>
     <div id="lib-root"><div class="lib-empty">Scanning your music folder…</div></div>
@@ -703,7 +757,14 @@
   </section>
 
   <section class="card">
-    <h2><span class="num">3</span> Downloads <span style="margin-left:auto"><button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button></span></h2>
+    <h2><span class="num">3</span> Downloads
+      <span style="margin-left:auto; display:flex; gap:8px; align-items:center">
+        <button class="btn ghost small" id="btn-pause" style="display:none" title="Hold queued downloads">⏸ Pause</button>
+        <button class="btn ghost small" id="btn-resume" style="display:none" title="Resume the queue">▶ Resume</button>
+        <button class="btn ghost small" id="btn-cancel-all" style="display:none" title="Cancel every queued/running download">✕ Cancel all</button>
+        <button class="btn ghost small" id="btn-clear" style="display:none">Clear finished</button>
+      </span>
+    </h2>
     <div class="jobs" id="jobs"><div class="empty"><svg class="empty-note" viewBox="0 0 24 24"><defs><linearGradient id="en" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fa2d48"/><stop offset="1" stop-color="#af52de"/></linearGradient></defs><path fill="url(#en)" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>Nothing yet — paste links above and hit <b>Download</b>.</div></div>
   </section>
 
@@ -723,6 +784,10 @@
       <div class="field">
         <label for="f-ytm-itag">YouTube Music audio quality</label>
         <select id="f-ytm-itag">
+          <option value="249">Opus 50k (free)</option>
+          <option value="250">Opus 70k (free)</option>
+          <option value="139">AAC 48k (free)</option>
+          <option value="251">Opus 160k (free)</option>
           <option value="140">AAC 128k (free)</option>
           <option value="141">AAC 256k (Premium)</option>
           <option value="774">Opus 256k (Premium)</option>
@@ -734,17 +799,37 @@
         <input type="text" id="f-ytm-cookies" placeholder="(empty = same as Cookies file)">
       </div>
       <div class="field">
+        <label for="f-ytm-po">YouTube PO token (fixes bot-blocks)</label>
+        <input type="text" id="f-ytm-po" placeholder="(optional) see gytmdl docs">
+        <div class="hint" style="margin-top:6px">Proof-of-Origin token — YouTube increasingly blocks the anonymous client on bulk runs; a PO token is the documented fix.</div>
+      </div>
+      <div class="field">
+        <label for="f-ytm-filetmpl">YouTube song file template</label>
+        <input type="text" id="f-ytm-filetmpl" placeholder="(empty = default) e.g. {track:02d} {title}">
+      </div>
+      <div class="field">
         <label for="f-spotify-quality">Spotify audio quality</label>
         <select id="f-spotify-quality">
-          <option value="160">160kbps (free accounts)</option>
-          <option value="320,160">320kbps (Premium)</option>
+          <option value="vorbis-low">OGG 96kbps (free)</option>
+          <option value="vorbis-medium">OGG 160kbps (free) — default</option>
+          <option value="vorbis-high,vorbis-medium">OGG 320kbps (Premium)</option>
+          <option value="aac-high,aac-medium">AAC 256k / 160k (Premium)</option>
+          <option value="flac-flac,vorbis-high,vorbis-medium">FLAC 16-bit lossless (needs .wvd)</option>
+          <option value="flac-flac-24,flac-flac,vorbis-high,vorbis-medium">FLAC 24-bit lossless (needs .wvd)</option>
+          <option value="flac-mp4,vorbis-high,vorbis-medium">FLAC-in-MP4 16-bit (needs .wvd)</option>
+          <option value="flac-mp4-24,flac-mp4,vorbis-high,vorbis-medium">FLAC-in-MP4 24-bit (needs .wvd)</option>
         </select>
-        <div class="hint" style="margin-top:6px">320kbps needs a Premium account. ⚠️ Spotify has suspended accounts caught using third-party downloaders — your call.</div>
+        <div class="hint" style="margin-top:6px">OGG 160k (vorbis-medium) works on free accounts; 320k (vorbis-high) + the AAC tiers need Premium; the FLAC tiers need a <code>.wvd</code> Widevine file (below). ⚠️ Spotify has suspended accounts caught using third-party downloaders — your call.</div>
       </div>
       <div class="field">
         <label for="f-spotify-cookies">Spotify cookies (required for Spotify downloads)</label>
         <input type="text" id="f-spotify-cookies" placeholder="(empty = same as Cookies file)">
         <div class="hint" style="margin-top:6px">Export from <code>open.spotify.com</code> with the “Get cookies.txt LOCALLY” extension.</div>
+      </div>
+      <div class="field">
+        <label for="f-spotify-wvd">Spotify .wvd Widevine file (for FLAC tiers)</label>
+        <input type="text" id="f-spotify-wvd" placeholder="(empty = OGG only) e.g. ~/Downloads/device.wvd">
+        <div class="hint" style="margin-top:6px">Required for the lossless FLAC tiers above — the same <code>.wvd</code> gamdl accepts (export one from a Widevine L3 device with pywidevine).</div>
       </div>
       <div class="field">
         <label for="f-cover">Cover size (px)</label>
@@ -801,9 +886,30 @@
           <label for="f-amdl-cover">Cover size (WxH px)</label>
           <input type="text" id="f-amdl-cover" placeholder="5000x5000">
         </div>
+        <div class="field">
+          <label for="f-amdl-convert">Convert after download (amdl)</label>
+          <select id="f-amdl-convert">
+            <option value="off">Off — keep native</option>
+            <option value="flac">FLAC</option>
+            <option value="mp3">MP3</option>
+            <option value="opus">Opus</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="toggle"><input type="checkbox" id="f-amdl-keep"><span class="switch"></span>Keep the original file after conversion</label>
+        </div>
       </div>
       <div class="field">
-        <label class="toggle"><input type="checkbox" id="f-lyrics"><span class="switch"></span>Synced lyrics (.lrc)</label>
+        <label class="toggle"><input type="checkbox" id="f-lyrics"><span class="switch"></span>Synced lyrics</label>
+      </div>
+      <div class="field">
+        <label for="f-lyricfmt">Lyrics file format (gamdl)</label>
+        <select id="f-lyricfmt">
+          <option value="lrc">LRC (.lrc)</option>
+          <option value="srt">SRT (.srt)</option>
+          <option value="vtt">WebVTT (.vtt)</option>
+          <option value="ttml">TTML (.ttml)</option>
+        </select>
       </div>
       <div class="field">
         <label class="toggle"><input type="checkbox" id="f-coverfile"><span class="switch"></span>Save cover as file</label>
@@ -871,6 +977,41 @@
         <input type="text" id="f-playlisttmpl" placeholder="Playlists/{playlist_artist}">
       </div>
       <div class="field">
+        <label for="f-filenametmpl">File name template (gamdl)</label>
+        <input type="text" id="f-filenametmpl" placeholder="(empty = default) e.g. {track:02d} {title}">
+        <div class="hint" style="margin-top:6px">Applied to single-disc and multi-disc files. Supports <code>{track}</code>, <code>{title}</code>, <code>{artist}</code>, <code>{album}</code>…</div>
+      </div>
+      <div class="field">
+        <label for="f-multidisc">Multi-disc file name template (gamdl)</label>
+        <input type="text" id="f-multidisc" placeholder="(empty = same as File name template) e.g. {disc:02d}-{track:02d} {title}">
+        <div class="hint" style="margin-top:6px">Only applies to multi-disc releases; falls back to the single-disc template above.</div>
+      </div>
+      <div class="field">
+        <label for="f-compiletmpl">Compilation folder template (various artists)</label>
+        <input type="text" id="f-compiletmpl" placeholder="(empty = album template) e.g. Compilations/{album}">
+        <div class="hint" style="margin-top:6px">Compilation albums land here instead of the artist's own folder.</div>
+      </div>
+      <div class="field">
+        <label for="f-excludetags">Exclude tags (comma-separated)</label>
+        <input type="text" id="f-excludetags" placeholder="(empty = keep all) e.g. sortArtist, sortTitle, comments, copyright">
+      </div>
+      <div class="field">
+        <label for="f-datetag">Date tag template (strftime)</label>
+        <input type="text" id="f-datetag" placeholder="(empty = %Y-%m-%d) e.g. %Y">
+      </div>
+      <div class="field">
+        <label for="f-mvremux">Music video container</label>
+        <select id="f-mvremux">
+          <option value="">Keep original</option>
+          <option value="m4v">M4V</option>
+          <option value="mp4">MP4</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-desktopnotify"><span class="switch"></span>Desktop notifications when a batch finishes</label>
+        <div class="hint" style="margin-top:6px">Native OS notification (Notification Center / Windows toast / notify-send) — fires even when the browser tab is closed.</div>
+      </div>
+      <div class="field">
         <label class="toggle"><input type="checkbox" id="f-albumdate"><span class="switch"></span>Use album release date (not track date)</label>
       </div>
       <div class="field">
@@ -900,9 +1041,43 @@
         <div class="hint" style="margin-top:6px">Two-letter country code (US, GB, IN, …). Better matches outside the US catalog.</div>
       </div>
       <div class="field">
-        <label for="f-scanhook">Music-server rescan hook URL</label>
+        <label for="f-server-type">Media server (auto-scan after batches)</label>
+        <select id="f-server-type">
+          <option value="">None (use webhook below)</option>
+          <option value="navidrome">Navidrome</option>
+          <option value="plex">Plex</option>
+          <option value="jellyfin">Jellyfin</option>
+        </select>
+        <div class="hint" style="margin-top:6px">When set, the batch-finished hook and the 📡 Scan now button call the server's real scan API instead of the generic webhook.</div>
+      </div>
+      <div class="field">
+        <label for="f-server-url">Server URL</label>
+        <input type="text" id="f-server-url" placeholder="http://127.0.0.1:4533">
+      </div>
+      <div class="field">
+        <label for="f-server-token">API token / key</label>
+        <input type="text" id="f-server-token" placeholder="(optional for Navidrome/Plex)">
+      </div>
+      <div class="field">
+        <label for="f-server-section">Plex library section ID</label>
+        <input type="text" id="f-server-section" placeholder="1">
+      </div>
+      <div class="field">
+        <label for="f-scanhook">Fallback rescan webhook URL</label>
         <input type="text" id="f-scanhook" placeholder="https://…/scan (optional)">
-        <div class="hint" style="margin-top:6px">POSTed when a download batch finishes — point it at Navidrome/Plex/Jellyfin's scan endpoint or a webhook.</div>
+        <div class="hint" style="margin-top:6px">Used when no media server is selected — POSTed when a download batch finishes.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-remote-bind"><span class="switch"></span>Remote access (listen on all interfaces)</label>
+        <div class="hint" style="margin-top:6px">Lets the installed PWA connect from your phone on the same Wi-Fi — open <code>http://&lt;your-ip&gt;:8741</code>. Restart the app to apply.</div>
+      </div>
+      <div class="field">
+        <label for="f-remote-token">Access token (protects the API)</label>
+        <input type="text" id="f-remote-token" placeholder="(empty = no auth)">
+        <div class="hint" style="margin-top:6px">When set, every API call needs it. Strongly recommended with remote access on. Restart to apply. Saved in your browser.</div>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="f-autoclean"><span class="switch"></span>Auto-delete empty folders after batches</label>
       </div>
       <div class="field">
         <label for="f-notify">New-release notify URL (webhook)</label>
@@ -913,6 +1088,17 @@
         <label for="f-watch">Watch folder (auto-download dropped links)</label>
         <input type="text" id="f-watch" placeholder="(empty = off) e.g. ~/Downloads/MHR">
         <div class="hint" style="margin-top:6px">Drop a <code>.txt</code>/<code>.m3u</code>/<code>.url</code> containing Apple Music, Spotify or YouTube links — it downloads automatically and moves to <code>.done/</code>.</div>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>Settings presets</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+          <input type="text" id="f-preset-name" placeholder="Preset name" style="flex:1; min-width:150px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:9px 12px; font-size:13px; font-family:var(--mono); outline:none">
+          <select id="f-preset-select" style="flex:1; min-width:150px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:9px 12px; font-size:13px; font-family:var(--mono); outline:none"></select>
+          <button class="btn ghost small" id="btn-preset-save" title="Save the current settings as a named preset">💾 Save</button>
+          <button class="btn ghost small" id="btn-preset-apply" title="Apply the selected preset">Apply</button>
+          <button class="btn ghost small" id="btn-preset-del" title="Delete the selected preset">✕</button>
+        </div>
+        <div class="hint" style="margin-top:6px">Presets bundle the download-relevant settings (output folder, codec, templates, quality…) — switch between “home server” and “portable” setups in one click.</div>
       </div>
       <div class="settings-actions">
         <button class="btn small" id="btn-save-settings">Save settings</button>
@@ -1086,6 +1272,48 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+
+// Remote-access token: append ?token=… to every /api/* call and surface a
+// friendly prompt when the server answers 401 (protected instance). The token
+// is saved per-browser — re-enter it only if you clear site data.
+// Non-fetch API URLs (player <audio>/<img> sources, download anchors) must
+// carry the token too — the fetch wrapper above can't see them.
+function tokUrl(path) {
+  const tok = localStorage.getItem("mhr_token") || "";
+  if (tok && path && path.indexOf("/api/") === 0) {
+    return path + (path.indexOf("?") === -1 ? "?" : "&") + "token=" + encodeURIComponent(tok);
+  }
+  return path;
+}
+const _origFetch = window.fetch;
+let _tokenPromptOpen = false;
+function _promptForToken() {
+  if (_tokenPromptOpen) return;
+  _tokenPromptOpen = true;
+  const t = prompt(
+    "This Music High Res instance is protected by an access token.\n\n" +
+    "Enter the token from Settings → Remote access:"
+  );
+  _tokenPromptOpen = false;
+  if (t && t.trim()) {
+    localStorage.setItem("mhr_token", t.trim());
+    location.reload();
+  }
+}
+window.fetch = (input, init) => {
+  const tok = localStorage.getItem("mhr_token") || "";
+  let url = input;
+  if (tok && typeof url === "string" && url.indexOf("/api/") === 0) {
+    url = url + (url.indexOf("?") === -1 ? "?" : "&") + "token=" + encodeURIComponent(tok);
+  }
+  return _origFetch(url, init).then(r => {
+    if (r.status === 401 && tok) {
+      localStorage.removeItem("mhr_token");
+      _promptForToken();
+    }
+    return r;
+  });
+};
 // File-manager label for the "open in …" buttons: "Finder" on macOS,
 // "Explorer" on Windows. Set from /api/status.platform at boot.
 let FILE_MGR = "Finder";
@@ -1150,7 +1378,7 @@ function setArt(path) {
   im.alt = "";
   im.onload = () => { el.textContent = ""; el.appendChild(im); };
   im.onerror = () => { el.textContent = "🎵"; };
-  im.src = "/api/art?path=" + encodeURIComponent(path);
+  im.src = tokUrl("/api/art?path=" + encodeURIComponent(path));
 }
 
 function setBuffering(on) {
@@ -1170,7 +1398,7 @@ function seekTo(seconds) {
   const meta = player.queue[player.index];
   if (player.transcode) {
     // Live ADTS streams can't seek via Range — restart the stream at the offset.
-    player.audio.src = "/api/audio?path=" + encodeURIComponent(meta.path) + "&transcode=1&t=" + Math.floor(seconds);
+    player.audio.src = tokUrl("/api/audio?path=" + encodeURIComponent(meta.path) + "&transcode=1&t=" + Math.floor(seconds));
     $("pb-cur").textContent = fmtTime(seconds);
     player.audio.play().catch(() => {});
   } else {
@@ -1219,7 +1447,7 @@ function preloadNext() {
     player.preloadEl.onerror = () => {};  // warming is best-effort
   }
   player.preloadEl.preload = "metadata";
-  player.preloadEl.src = "/api/audio?path=" + encodeURIComponent(nxt.path);
+  player.preloadEl.src = tokUrl("/api/audio?path=" + encodeURIComponent(nxt.path));
 }
 
 function playTrack(track, queue) {
@@ -1581,11 +1809,12 @@ function loadSettings(cfg) {
   $("f-cookies").value = cfg.cookies_path || "";
   $("f-ytm-itag").value = cfg.ytm_itag || "140";
   $("f-ytm-cookies").value = cfg.ytm_cookies_path || "";
-  $("f-spotify-quality").value = cfg.spotify_audio_quality || "160";
+  $("f-spotify-quality").value = cfg.spotify_audio_quality || "vorbis-medium";
   $("f-spotify-cookies").value = cfg.spotify_cookies_path || "";
   $("f-cover").value = cfg.cover_size || 1200;
   $("f-artist").value = cfg.artist_auto_select || "all-albums";
   $("f-wrapper").checked = !!cfg.use_wrapper;
+  $("f-overwrite").checked = !!cfg.overwrite;
   $("f-wrapper-url").value = cfg.wrapper_url || "http://127.0.0.1";
   $("f-apple-engine").value = cfg.apple_engine === "amdl" ? "amdl" : "gamdl";
   $("f-amdl-atmos").value = cfg.amdl_atmos_max || "2768";
@@ -1607,6 +1836,19 @@ function loadSettings(cfg) {
   $("f-coverfmt").value = cfg.cover_format || "jpg";
   $("f-albumtmpl").value = cfg.album_folder_template || "{album_artist}/{album}";
   $("f-playlisttmpl").value = cfg.playlist_folder_template || "Playlists/{playlist_artist}";
+  $("f-lyricfmt").value = cfg.synced_lyrics_format || "lrc";
+  $("f-filenametmpl").value = cfg.file_name_template || "";
+  $("f-multidisc").value = cfg.multi_disc_file_template || "";
+  $("f-compiletmpl").value = cfg.compilation_folder_template || "";
+  $("f-excludetags").value = cfg.exclude_tags || "";
+  $("f-datetag").value = cfg.date_tag_template || "";
+  $("f-mvremux").value = cfg.mv_remux_format || "";
+  $("f-ytm-po").value = cfg.ytm_po_token || "";
+  $("f-ytm-filetmpl").value = cfg.ytm_file_template || "";
+  $("f-spotify-wvd").value = cfg.spotify_wvd_path || "";
+  $("f-desktopnotify").checked = !!cfg.desktop_notify;
+  $("f-amdl-convert").value = cfg.amdl_convert || "off";
+  $("f-amdl-keep").checked = !!cfg.amdl_convert_keep_original;
   $("f-albumdate").checked = !!cfg.use_album_date;
   $("f-hardlink").checked = !!cfg.playlist_hardlink;
   $("f-verifyq").checked = cfg.verify_quality !== false;
@@ -1615,6 +1857,13 @@ function loadSettings(cfg) {
   $("f-retries").value = cfg.auto_retry != null ? cfg.auto_retry : 2;
   $("f-storefront").value = cfg.storefront || "US";
   $("f-scanhook").value = cfg.scan_hook_url || "";
+  $("f-server-type").value = cfg.server_type || "";
+  $("f-server-url").value = cfg.server_url || "";
+  $("f-server-token").value = cfg.server_token || "";
+  $("f-server-section").value = cfg.server_section || "1";
+  $("f-remote-bind").checked = !!cfg.remote_bind;
+  $("f-remote-token").value = cfg.remote_token || "";
+  $("f-autoclean").checked = !!cfg.auto_clean_empty;
   $("f-notify").value = cfg.notify_url || "";
   $("f-watch").value = cfg.watch_folder || "";
   $("f-convert-dir").value = cfg.output_path || "";
@@ -1650,6 +1899,19 @@ function collectSettings() {
     cover_format: $("f-coverfmt").value,
     album_folder_template: $("f-albumtmpl").value.trim() || "{album_artist}/{album}",
     playlist_folder_template: $("f-playlisttmpl").value.trim() || "Playlists/{playlist_artist}",
+    synced_lyrics_format: $("f-lyricfmt").value,
+    file_name_template: $("f-filenametmpl").value.trim(),
+    multi_disc_file_template: $("f-multidisc").value.trim(),
+    compilation_folder_template: $("f-compiletmpl").value.trim(),
+    exclude_tags: $("f-excludetags").value.trim(),
+    date_tag_template: $("f-datetag").value.trim(),
+    mv_remux_format: $("f-mvremux").value,
+    ytm_po_token: $("f-ytm-po").value.trim(),
+    ytm_file_template: $("f-ytm-filetmpl").value.trim(),
+    spotify_wvd_path: $("f-spotify-wvd").value.trim(),
+    desktop_notify: $("f-desktopnotify").checked,
+    amdl_convert: $("f-amdl-convert").value,
+    amdl_convert_keep_original: $("f-amdl-keep").checked,
     use_album_date: $("f-albumdate").checked,
     playlist_hardlink: $("f-hardlink").checked,
     verify_quality: $("f-verifyq").checked,
@@ -1658,6 +1920,13 @@ function collectSettings() {
     auto_retry: parseInt($("f-retries").value, 10) || 0,
     storefront: ($("f-storefront").value.trim() || "US").toUpperCase(),
     scan_hook_url: $("f-scanhook").value.trim(),
+    server_type: $("f-server-type").value,
+    server_url: $("f-server-url").value.trim(),
+    server_token: $("f-server-token").value.trim(),
+    server_section: $("f-server-section").value.trim() || "1",
+    remote_bind: $("f-remote-bind").checked,
+    remote_token: $("f-remote-token").value.trim(),
+    auto_clean_empty: $("f-autoclean").checked,
     notify_url: $("f-notify").value.trim(),
     watch_folder: $("f-watch").value.trim(),
   };
@@ -1886,6 +2155,13 @@ async function refreshJobs() {
   const data = await res.json();
   state.jobs = data.jobs;
   renderJobs();  // fetches logs for every visible job
+  // Queue controls: Pause shows while anything is queued (unless paused),
+  // Resume while paused with queued jobs, Cancel all with any active job.
+  const hasQ = state.jobs.some(j => j.status === "queued");
+  const hasActive = state.jobs.some(j => j.status === "queued" || j.status === "running");
+  $("btn-pause").style.display = (data.paused ? "none" : (hasQ ? "inline-flex" : "none"));
+  $("btn-resume").style.display = (data.paused && hasQ) ? "inline-flex" : "none";
+  $("btn-cancel-all").style.display = hasActive ? "inline-flex" : "none";
 
   const active = state.jobs.some(j => j.status === "running" || j.status === "queued");
   if (active && !state.pollTimer) {
@@ -1963,14 +2239,38 @@ function renderLibraryError(msg) {
 }
 function renderLibrary(d) {
   const root = $("lib-root");
-  const total = d.total_tracks || 0;
-  const size = fmtBytes(d.total_bytes);
+  // Client-side quality + recently-added filters (the scan already returns
+  // each album's quality badge and ledger 'added' date — no extra queries).
+  const qf = ($("lib-q").value || "").toLowerCase();
+  const days = parseInt($("lib-recent").value, 10) || 0;
+  const now = Date.now() / 1000;
+  const filtering = !!(qf || days);
+  let artists = (d.artists || []).map(a => {
+    const albums = (a.albums || []).filter(al => {
+      const q = (al.quality || "").toLowerCase();
+      const codecOk = !qf || (qf === "lossless" ? (q.startsWith("alac") || q.startsWith("flac")) :
+                              qf === "lossy" ? (!(q.startsWith("alac") || q.startsWith("flac"))) :
+                              q.startsWith(qf));
+      const recentOk = !days || (al.added && (now - al.added) <= days * 86400);
+      return codecOk && recentOk;
+    });
+    return { ...a, albums };
+  }).filter(a => a.albums.length > 0);
+
+  // With a quality/recent filter active, show the filtered totals (the header
+  // would otherwise read as inconsistent with the visible list).
+  const filtTracks = artists.reduce((n, a) => n + a.albums.reduce((m, al) => m + (al.track_count || 0), 0), 0);
+  const filtBytes = artists.reduce((n, a) => n + a.albums.reduce((m, al) => m + (al.size_bytes || 0), 0), 0);
+  const total = filtering ? filtTracks : (d.total_tracks || 0);
+  const size = fmtBytes(filtering ? filtBytes : d.total_bytes);
   $("lib-total").textContent = `${total} track${total === 1 ? "" : "s"}${size ? " · " + size : ""}`;
   const hint = $("lib-hint");
   hint.style.display = (d.path && d.truncated) ? "block" : "none";
   if (d.truncated) hint.textContent = `Showing the first ${d.artists.length} artists — the full library lives in ${d.path}.`;
   let html = "";
-  if (d.playlists && d.playlists.length) {
+  // Playlists are only shown with no quality/recent filter active — they have
+  // neither a codec badge nor an added date to filter by.
+  if (!filtering && d.playlists && d.playlists.length) {
     html += `<div class="lib-group"><h3>Playlists</h3>` + d.playlists.map(p =>
       `<div class="lib-playlist">
         <span>${escapeHtml(p.name)}</span>
@@ -1981,49 +2281,104 @@ function renderLibrary(d) {
       </div>`
     ).join("") + `</div>`;
   }
-  if (!d.artists.length && !html) {
-    root.innerHTML = `<div class="lib-empty">${libQuery ? "No matches for that search." : "Nothing downloaded yet — your music will show up here."}<br>Downloads land in <code>${escapeHtml(d.path || "")}</code>.</div>`;
+  if (!artists.length && !html) {
+    root.innerHTML = `<div class="lib-empty">${libQuery || filtering ? "No matches for that search / filter." : "Nothing downloaded yet — your music will show up here."}<br>Downloads land in <code>${escapeHtml(d.path || "")}</code>.</div>`;
     return;
   }
-  // The artist/album list gets its own heading so it never reads as part of a
-  // panel above it (e.g. the Cleanup panel's 🗑 Trash strip, which lives in
-  // #lib-extra directly above this list).
-  if (d.artists.length) html += `<div class="lib-group"><h3>Artists &amp; albums</h3>`;
-  html += d.artists.map(a => {
-    const albums = (a.albums || []).map(al =>
+  if (artists.length) html += `<div class="lib-group"><h3>Artists &amp; albums</h3>`;
+  html += artists.map(a => {
+    const t = a.albums.reduce((n, al) => n + (al.track_count || 0), 0);
+    const b = a.albums.reduce((n, al) => n + (al.size_bytes || 0), 0);
+    // Artist badge recomputed from the (possibly filter-shrunk) album list so
+    // it always matches what's visible — lossless beats lossy, else the first.
+    const artistQ = (() => {
+      const qs = a.albums.map(al => (al.quality || "").toLowerCase()).filter(Boolean);
+      const pick = qs.find(q => q.startsWith("alac") || q.startsWith("flac")) || qs[0] || "";
+      return pick ? pick.toUpperCase() : "";
+    })();
+    const albums = a.albums.map(al =>
       `<div class="lib-album">
+        <input type="checkbox" class="bulk-sel" data-path="${encodeURIComponent(al.path)}" title="Select for bulk tag editing" style="accent-color:var(--accent-2); width:14px; height:14px; flex:none; cursor:pointer">
         <button class="link-btn" data-play="${encodeURIComponent(al.path)}" title="Play album in the in-app player">▶</button>
         <span>${escapeHtml(al.name)}</span>
+        ${al.added && (now - al.added) <= 14 * 86400 ? `<span class="badge" style="color:#ffd60a;border-color:rgba(255,214,10,.4);background:rgba(255,214,10,.08)" title="Added in the last 14 days">NEW</span>` : ""}
         ${al.quality ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)" title="Best audio quality found">${escapeHtml(al.quality)}</span>` : ""}
         ${al.added ? `<span class="badge" title="Added to your library">📅 ${fmtDate(al.added)}</span>` : ""}
         <span class="cnt">${al.track_count} · ${fmtBytes(al.size_bytes)}</span>
+        <button class="link-btn" data-cover="${encodeURIComponent(al.path)}" title="Re-fetch this album's cover at high resolution">📷</button>
+        <button class="link-btn" data-source="${encodeURIComponent(al.path)}" title="Open on Apple Music">🔗</button>
+        <button class="link-btn" data-cue="${encodeURIComponent(al.path)}" title="Generate a .cue sheet">📼</button>
+        <button class="link-btn" data-m3u="${encodeURIComponent(al.path)}" title="Export this album as .m3u">⤓</button>
+        <button class="link-btn" data-mbfix="${encodeURIComponent(al.path)}" title="Auto-fix tags from MusicBrainz">🧠</button>
+        <button class="link-btn" data-rename="${encodeURIComponent(al.path)}" title="Rename this folder in place">✏</button>
         <button class="link-btn" data-edit="${encodeURIComponent(al.path)}" title="Edit track tags">✎</button>
         <button class="link-btn" data-open="${encodeURIComponent(al.path)}">${FILE_MGR}</button>
       </div>`
     ).join("");
     return `<details class="lib-artist">
-      <summary>${escapeHtml(a.name)} ${a.quality ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)">${escapeHtml(a.quality)}</span>` : ""}<span class="cnt">${a.track_count} track${a.track_count === 1 ? "" : "s"}${a.size_bytes ? " · " + fmtBytes(a.size_bytes) : ""}</span></summary>
+      <summary>${escapeHtml(a.name)} ${artistQ ? `<span class="badge lossless" style="color:#e8b7ff;border-color:rgba(175,82,222,.4);background:rgba(175,82,222,.12)">${escapeHtml(artistQ)}</span>` : ""}<span class="cnt">${t} track${t === 1 ? "" : "s"}${b ? " · " + fmtBytes(b) : ""}</span></summary>
       <div class="lib-albums">${albums}</div>
     </details>`;
   }).join("");
-  if (d.artists.length) html += `</div>`;
+  if (artists.length) html += `</div>`;
   root.innerHTML = html;
   // Wire the open-in-file-manager buttons (delegation: re-rendered on refresh).
   root.querySelectorAll("[data-open]").forEach(btn => {
     btn.addEventListener("click", () => openInFinder(decodeURIComponent(btn.dataset.open)));
   });
-  // Wire the rename buttons.
   root.querySelectorAll("[data-rename]").forEach(btn => {
     btn.addEventListener("click", () => renameLibraryPath(decodeURIComponent(btn.dataset.rename)));
   });
-  // Wire the play buttons (in-app player).
   root.querySelectorAll("[data-play]").forEach(btn => {
     btn.addEventListener("click", () => playAlbum(decodeURIComponent(btn.dataset.play)));
   });
-  // Wire the tag-editor buttons.
   root.querySelectorAll("[data-edit]").forEach(btn => {
     btn.addEventListener("click", () => openTagEditor(decodeURIComponent(btn.dataset.edit)));
   });
+  // Hi-res cover upgrade (runs as a background task, result toasted).
+  root.querySelectorAll("[data-cover]").forEach(btn => {
+    btn.addEventListener("click", () => upgradeCover(decodeURIComponent(btn.dataset.cover)));
+  });
+  // 'Open on Apple Music' — the source URL is fetched lazily from the ledger.
+  root.querySelectorAll("[data-source]").forEach(btn => {
+    btn.addEventListener("click", () => openSource(decodeURIComponent(btn.dataset.source)));
+  });
+  // Cue sheet per album.
+  root.querySelectorAll("[data-cue]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const p = decodeURIComponent(btn.dataset.cue);
+      try {
+        const d = await (await fetch("/api/library/cue?path=" + encodeURIComponent(p))).json();
+        toast(d.ok ? d.message : (d.error || "Could not write cue."), d.ok ? "ok" : "err");
+      } catch (e) { toast("Network error: " + e.message, "err"); }
+    });
+  });
+  // Per-album .m3u download.
+  root.querySelectorAll("[data-m3u]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const p = decodeURIComponent(btn.dataset.m3u);
+      const a = document.createElement("a");
+      a.href = tokUrl("/api/library/m3u?scope=album&path=" + encodeURIComponent(p));
+      a.download = "album.m3u";
+      a.click();
+    });
+  });
+  // Per-album MusicBrainz tag fix.
+  root.querySelectorAll("[data-mbfix]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      startMusicBrainz("album", decodeURIComponent(btn.dataset.mbfix));
+    });
+  });
+  // Bulk tag selection: sync checkbox state back into the selection set.
+  root.querySelectorAll(".bulk-sel").forEach(cb => {
+    const path = decodeURIComponent(cb.dataset.path);
+    cb.checked = bulkSel.has(path);
+    cb.addEventListener("change", () => {
+      if (cb.checked) bulkSel.add(path); else bulkSel.delete(path);
+      updateBulkBar();
+    });
+  });
+  updateBulkBar();
 }
 async function renameLibraryPath(path) {
   const oldName = path.split("/").pop() || path;
@@ -2358,6 +2713,39 @@ async function showStats() {
     const top = (data.top_artists || []).map(a =>
       `<div class="stat-bar-row"><span class="lbl">${escapeHtml(a.name)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.min(100, Math.round((a.tracks / (data.top_artists[0]?.tracks || 1)) * 100))}%"></span></span><span class="n">${a.tracks}</span></div>`
     ).join("");
+    // Quality histogram (per-file, cached probes) + ledger download history.
+    let histHtml = "";
+    let historyHtml = "";
+    try {
+      const [hr, hh] = await Promise.all([
+        fetch("/api/library/histogram").then(r => r.json()),
+        fetch("/api/stats/history").then(r => r.json()),
+      ]);
+      if (hr.ok) {
+        const hTotal = Object.values(hr.by_codec || {}).reduce((a, b) => a + b, 0) || 1;
+        const bars = (codec => Object.entries(codec).map(([c, n]) =>
+          `<div class="stat-bar-row"><span class="lbl">${escapeHtml(c)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.round((n / hTotal) * 100)}%"></span></span><span class="n">${n}</span></div>`
+        ).join(""));
+        const depth = (hr.by_bits ? Object.entries(hr.by_bits).map(([b, n]) => `${b}-bit × ${n}`).join(" · ") : "");
+        const rate = (hr.by_rate ? Object.entries(hr.by_rate).map(([r, n]) => `${r}k × ${n}`).join(" · ") : "");
+        histHtml = `<div class="lib-group"><h3>Quality histogram (per file)</h3>
+          <div class="muted-sm" style="margin-bottom:6px">${hr.lossless || 0} lossless · ${hr.lossy || 0} lossy · ${hr.tracks || 0} probed</div>
+          ${hr.by_codec ? `<div class="stat-bars">${bars(hr.by_codec)}</div>` : ""}
+          ${depth ? `<div class="hint">Bit-depth: ${depth}</div>` : ""}
+          ${rate ? `<div class="hint">Sample rate: ${rate}</div>` : ""}
+        </div>`;
+      }
+      if (hh.ok) {
+        const months = Object.entries(hh.by_month || {}).slice(-8).map(([m, n]) => {
+          const max = Math.max(1, ...Object.values(hh.by_month || {}).map(v => v));
+          return `<div class="stat-bar-row"><span class="lbl">${escapeHtml(m)}</span><span class="stat-bar-track"><span class="stat-bar-fill" style="width:${Math.round((n / max) * 100)}%"></span></span><span class="n">${n}</span></div>`;
+        }).join("");
+        historyHtml = `<div class="lib-group"><h3>Download history (from the ledger)</h3>
+          <div class="muted-sm" style="margin-bottom:6px">${hh.total || 0} file(s) recorded</div>
+          ${months ? `<div class="stat-bars">${months}</div>` : `<div class="hint">No history yet — the ledger records each download.</div>`}
+        </div>`;
+      }
+    } catch (e) { /* stats stay partial on network hiccups */ }
     box.innerHTML = `<div class="stats-grid">
       <div class="stat-card"><div class="v">${data.tracks || 0}</div><div class="k">tracks</div></div>
       <div class="stat-card"><div class="v">${fmtBytes(data.bytes)}</div><div class="k">total size</div></div>
@@ -2366,7 +2754,8 @@ async function showStats() {
       <div class="stat-card"><div class="v">${data.playlists || 0}</div><div class="k">playlists</div></div>
     </div>` +
       (split ? `<div class="lib-group"><h3>Codec split (by album)</h3><div class="stat-bars">${split}</div></div>` : "") +
-      (top ? `<div class="lib-group"><h3>Top artists by tracks</h3><div class="stat-bars">${top}</div></div>` : "");
+      (top ? `<div class="lib-group"><h3>Top artists by tracks</h3><div class="stat-bars">${top}</div></div>` : "") +
+      histHtml + historyHtml;
   } catch (e) {
     box.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
   } finally {
@@ -2453,6 +2842,13 @@ async function showImportPanel() {
     </div>
     <div id="libxml-result" style="margin-top:10px"></div>
     <div class="hint">Tracks are matched against the Apple Music catalog (iTunes Search API, same as the Migrate panel) — matched ones are ready to download as one batch.</div>
+  </div>
+  <div class="lib-group" style="margin-top:16px"><h3>♻ Restore settings from backup</h3>
+    <div class="row" style="margin-top:0">
+      <input type="file" id="f-restore" accept=".json,application/json" style="flex:1; min-width:220px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:8px 12px; font-size:12.5px">
+      <button class="btn ghost small" id="btn-restore" style="align-self:flex-end">♻ Restore</button>
+    </div>
+    <div id="restore-result" class="hint" style="margin-top:8px">Pick the <code>music-high-res-backup.json</code> you exported earlier — its config (output folder, quality, engines, server presets…) is applied. The library index part is informational.</div>
   </div>`;
   $("btn-libxml-preview").addEventListener("click", async () => {
     const path = $("f-libxml").value.trim();
@@ -2488,6 +2884,30 @@ async function showImportPanel() {
       toast(`Imported ${data.total} tracks, ${ok} matched ✓`, ok ? "ok" : "err");
     } catch (e) {
       resBox.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`;
+    }
+  });
+  $("btn-restore").addEventListener("click", async () => {
+    const fileInput = $("f-restore");
+    const file = fileInput.files && fileInput.files[0];
+    const resEl = $("restore-result");
+    if (!file) { resEl.textContent = "Pick a backup file first."; return; }
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const btn = $("btn-restore"); btn.disabled = true; btn.textContent = "Restoring…";
+      const res = await fetch("/api/library/restore", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: data.config || {} }),
+      });
+      const d = await res.json();
+      if (!d.ok) { resEl.textContent = d.error || "Restore failed."; }
+      else {
+        resEl.textContent = `Restored ${d.count} setting(s) ✓ — reload to apply.`;
+        toast(`Restored ${d.count} setting(s) from backup ✓`, "ok");
+      }
+      btn.disabled = false; btn.textContent = "♻ Restore";
+    } catch (e) {
+      resEl.textContent = "Could not read that file — is it a Music High Res backup JSON?";
     }
   });
 }
@@ -2774,7 +3194,7 @@ async function download() {
     const res = await fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls, codec: currentCodec(), delta: state.config && !!state.config.delta_sync }),
+      body: JSON.stringify({ urls, codec: currentCodec(), overwrite: $("f-overwrite").checked, delta: state.config && !!state.config.delta_sync }),
     });
     const data = await res.json();
     if (!data.ok) { toast(data.error || "Download failed to start.", "err"); return; }
@@ -3227,6 +3647,564 @@ async function convertToFlac() {
   }
 }
 
+/* ---------------- v1.1 library power features ---------------- */
+const bulkSel = new Set();
+function updateBulkBar() {
+  const bar = $("bulk-bar");
+  if (!bar) return;
+  const n = bulkSel.size;
+  $("bulk-count").textContent = `${n} album${n === 1 ? "" : "s"} selected`;
+  bar.style.display = n ? "flex" : "none";
+}
+
+// Run a long library job in the server's background task pool and toast the
+// result when it lands (poll /api/tasks/<id>).
+async function startLibraryTask(path, body, label, describe) {
+  toast(`${label}: starting…`);
+  let res, data;
+  try {
+    res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    data = await res.json();
+  } catch (e) { toast(`${label}: network error`, "err"); return; }
+  if (!data.ok || !data.task) { toast(data.error || `${label} couldn't start.`, "err"); return; }
+  const poll = setInterval(async () => {
+    try {
+      const t = await (await fetch("/api/tasks/" + data.task)).json();
+      // Task evicted (registry capped) or lost on restart — stop polling so
+      // the interval can't run forever.
+      if (!t.ok || !t.status) {
+        clearInterval(poll);
+        toast(`${label}: task no longer tracked (server restarted?)`, "err");
+        return;
+      }
+      if (t.status === "done") {
+        clearInterval(poll);
+        toast(describe ? describe(t.result || {}) : `${label} done ✓`, "ok");
+        refreshLibrary();
+      } else if (t.status === "failed") {
+        clearInterval(poll);
+        toast(t.error || `${label} failed.`, "err");
+      }
+    } catch (e) { clearInterval(poll); toast(`${label}: network error`, "err"); }
+  }, 2000);
+}
+function startReplayGain() {
+  startLibraryTask("/api/library/replaygain", {}, "ReplayGain",
+    r => `ReplayGain: ${r.tracks ?? 0} track(s) tagged across ${r.albums ?? 0} album(s) ✓`);
+}
+function startLyricsBackfill() {
+  startLibraryTask("/api/library/lyrics", {}, "Lyrics",
+    r => `Lyrics: fetched ${r.fetched ?? 0} · ${r.already ?? 0} already had · ${r.no_match ?? 0} no match`);
+}
+function upgradeCover(albumPath) {
+  startLibraryTask("/api/library/cover-upgrade", { album_path: albumPath }, "Cover",
+    r => r.ok === false ? (r.error || "Cover upgrade failed.") : `Cover upgraded on ${r.tracks ?? 0} track(s) ✓`);
+}
+
+async function openSource(albumPath) {
+  try {
+    const data = await (await fetch("/api/library/album/source?path=" + encodeURIComponent(albumPath))).json();
+    if (!data.ok) { toast(data.error || "No source link.", "err"); return; }
+    if (!data.url) { toast("No source URL recorded for this album in the ledger.", "err"); return; }
+    window.open(data.url, "_blank");
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+}
+
+/* ---------------- 🔍 catalog search (Apple Music via iTunes API) ---------------- */
+async function showCatalogSearch() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:560px">
+    <h3>🔍 Search Apple Music catalog</h3>
+    <div class="muted-sm">Find an album or song and add it straight to the download list — no link hunting.</div>
+    <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap">
+      <input id="cat-q" type="text" placeholder="Artist / album / song…" style="flex:1; min-width:180px; background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:9px 12px; font-size:13px; font-family:var(--mono); outline:none">
+      <select id="cat-entity" style="background:rgba(0,0,0,.35); color:var(--text); border:1px solid var(--border); border-radius:9px; padding:9px; font-size:12.5px">
+        <option value="album">Albums</option>
+        <option value="song">Songs</option>
+        <option value="artist">Artists</option>
+      </select>
+      <button class="btn small" id="cat-go">Search</button>
+    </div>
+    <div id="cat-results" style="max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:8px"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="cat-cancel">Close</button>
+      <button class="btn small" id="cat-addall" style="display:none">+ Add all to downloads</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const resultsEl = $("cat-results");
+  let lastResults = [];
+  const doSearch = async () => {
+    const q = $("cat-q").value.trim();
+    if (!q) { toast("Type something to search.", "err"); return; }
+    const go = $("cat-go"); go.disabled = true; go.textContent = "Searching…";
+    resultsEl.innerHTML = `<div class="lib-empty">Searching…</div>`;
+    try {
+      const data = await (await fetch("/api/catalog/search?q=" + encodeURIComponent(q) + "&entity=" + $("cat-entity").value)).json();
+      if (!data.ok) { resultsEl.innerHTML = `<div class="lib-empty">${escapeHtml(data.error || "Search failed.")}</div>`; return; }
+      lastResults = data.results || [];
+      $("cat-addall").style.display = lastResults.length ? "inline-flex" : "none";
+      resultsEl.innerHTML = lastResults.length ? lastResults.map((r, i) => `
+        <div>
+          <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:10px; padding:8px 10px">
+            ${r.art ? `<img src="${r.art}" style="width:40px; height:40px; border-radius:8px; flex:none; object-fit:cover" onerror="this.style.display='none'">` : `<div style="width:40px; height:40px; border-radius:8px; flex:none; background:var(--grad); display:grid; place-items:center; font-size:15px">🎵</div>`}
+            <div style="flex:1; min-width:0">
+              <b style="font-size:12.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(r.name)}</b>
+              <span class="muted-sm">${escapeHtml(r.artist)}${r.year ? " · " + escapeHtml(r.year) : ""}${r.kind === "album" && r.track_count ? " · " + r.track_count + " tracks" : ""}${r.kind === "artist" ? " · artist" : ""}</span>
+            </div>
+            ${r.kind !== "artist" && r.owned ? `<span class="badge" style="color:var(--ok);border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.1)" title="Already in your library">✓ owned ${r.owned}</span>` : ""}
+            ${r.kind === "artist"
+              ? `<button class="btn ghost small" data-disc="${i}" title="List this artist's albums">📀 Discography</button>`
+              : `<button class="btn ghost small" data-add="${i}" title="Add to the download list">+ Add</button>`}
+            <button class="link-btn" data-star="${i}" title="Save to wishlist">⭐</button>
+          </div>
+          <div id="cat-disc-${i}" style="display:none; margin:6px 0 2px 50px; flex-direction:column; gap:6px"></div>
+        </div>`).join("") : `<div class="lib-empty">No results for “${escapeHtml(q)}”.</div>`;
+      resultsEl.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
+        const r = lastResults[+b.dataset.add];
+        const box = $("urls");
+        box.value = (box.value ? box.value.trimEnd() + "\n" : "") + r.url;
+        box.focus();
+        toast(`Added “${r.name}” to the download list ✓`, "ok");
+        scheduleUrlPreview();
+      }));
+      resultsEl.querySelectorAll("[data-disc]").forEach(b => b.addEventListener("click", async () => {
+        const r = lastResults[+b.dataset.disc];
+        const discBox = $("cat-disc-" + b.dataset.disc);
+        if (!r.artist_id) { toast("No artist id for that result.", "err"); return; }
+        if (discBox.dataset.loaded) {
+          discBox.style.display = discBox.style.display === "none" ? "flex" : "none";
+          return;
+        }
+        b.disabled = true; b.textContent = "Loading…";
+        try {
+          const d = await (await fetch("/api/catalog/artist?id=" + encodeURIComponent(r.artist_id))).json();
+          if (!d.ok) { toast(d.error || "Could not load discography.", "err"); return; }
+          const albums = d.results || [];
+          if (!albums.length) discBox.innerHTML = `<div class="lib-empty">No albums found for ${escapeHtml(r.name)}.</div>`;
+          const missing = albums.filter(a => !(a.owned > 0));
+          const missBar = missing.length
+            ? `<div style="display:flex; justify-content:flex-end; margin-bottom:6px"><button class="btn ghost small" id="disc-miss-${i}" title="Queue every album this artist has that you don't own">⬇ Download ${missing.length} missing</button></div>`
+            : (albums.length ? `<div class="muted-sm" style="margin-bottom:6px">You own everything by this artist 🎉</div>` : "");
+          discBox.innerHTML = missBar + albums.map((a, j) => `
+            <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,.22); border:1px solid var(--border); border-radius:8px; padding:6px 9px">
+              ${a.art ? `<img src="${a.art}" style="width:30px; height:30px; border-radius:6px; flex:none; object-fit:cover" onerror="this.style.display='none'">` : `<div style="width:30px; height:30px; border-radius:6px; flex:none; background:var(--panel-2)"></div>`}
+              <div style="flex:1; min-width:0">
+                <b style="font-size:12px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(a.name)}</b>
+                <span class="muted-sm">${a.year ? escapeHtml(a.year) + " · " : ""}${a.track_count} track${a.track_count === 1 ? "" : "s"}</span>
+              </div>
+              ${a.owned ? `<span class="badge" style="color:var(--ok);border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.1)">✓ owned ${a.owned}</span>` : ""}
+              <button class="btn ghost small" data-album-add="${j}" title="Add to the download list">+ Add</button>
+            </div>`).join("");
+          discBox.dataset.loaded = "1";
+          discBox.style.display = "flex";
+          discBox.querySelectorAll("[data-album-add]").forEach(ab => ab.addEventListener("click", () => {
+            const a = albums[+ab.dataset.albumAdd];
+            const urlBox = $("urls");
+            urlBox.value = (urlBox.value ? urlBox.value.trimEnd() + "\n" : "") + a.url;
+            urlBox.focus();
+            toast(`Added “${a.name}” to the download list ✓`, "ok");
+            scheduleUrlPreview();
+          }));
+          const missBtn = $("disc-miss-" + i);
+          if (missBtn) missBtn.addEventListener("click", async () => {
+            const urls = missing.map(a => a.url).filter(Boolean);
+            if (!urls.length) { toast("No downloadable links for the missing albums.", "err"); return; }
+            missBtn.disabled = true; missBtn.textContent = "Queuing…";
+            try {
+              const r = await (await fetch("/api/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls }) })).json();
+              if (!r.ok) { toast(r.error || "Could not queue.", "err"); return; }
+              toast(`Queued ${r.job ? r.job.url_count : urls.length} link(s) ✓`, "ok");
+              if (r.job) { state.expanded.add(r.job.id); await refreshJobs(); }
+            } catch (e) { toast("Network error: " + e.message, "err"); }
+            finally { missBtn.disabled = false; missBtn.textContent = `⬇ Download ${missing.length} missing`; }
+          });
+        } catch (e) { toast("Network error: " + e.message, "err"); }
+        finally { b.disabled = false; b.textContent = "📀 Discography"; }
+      }));
+      resultsEl.querySelectorAll("[data-star]").forEach(b => b.addEventListener("click", async () => {
+        const r = lastResults[+b.dataset.star];
+        await fetch("/api/wishlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: r.url, title: r.artist + " — " + r.name }) });
+        toast("Saved to wishlist ⭐", "ok");
+      }));
+    } catch (e) { resultsEl.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`; }
+    finally { go.disabled = false; go.textContent = "Search"; }
+  };
+  $("cat-go").addEventListener("click", doSearch);
+  $("cat-q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+  $("cat-cancel").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  $("cat-addall").addEventListener("click", () => {
+    // Artists expand into discographies — only albums/songs are directly
+    // addable, so filter them out of "Add all".
+    const add = lastResults.filter(r => r.kind !== "artist" && r.url).map(r => r.url);
+    const box = $("urls");
+    box.value = (box.value ? box.value.trimEnd() + "\n" : "") + add.join("\n");
+    box.focus();
+    toast(`Added ${add.length} link(s) to the download list ✓`, "ok");
+    back.remove();
+    scheduleUrlPreview();
+  });
+  setTimeout(() => $("cat-q").focus(), 60);
+}
+
+/* ---------------- 🧠 MusicBrainz tag fixing ---------------- */
+function startMusicBrainz(scope, albumPath) {
+  startLibraryTask("/api/library/musicbrainz",
+    scope === "library" ? { scope: "library" } : { path: albumPath },
+    "MusicBrainz",
+    r => `MusicBrainz: fixed ${r.tracks_fixed ?? r.fixed ?? 0} track(s) across ${r.albums_fixed ?? r.albums ?? 1} album(s) ✓`);
+}
+
+/* ---------------- ⤓ .m3u export ---------------- */
+function downloadLibraryM3U() {
+  const a = document.createElement("a");
+  a.href = tokUrl("/api/library/m3u?scope=library");
+  a.download = "Music High Res Library.m3u";
+  a.click();
+  toast("Exporting library .m3u ✓", "ok");
+}
+
+/* ---------------- 🗑 empty dirs ---------------- */
+async function showEmptyDirs() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:520px">
+    <h3>🗑 Empty folders</h3>
+    <div class="muted-sm">Folders with no files at all — stale after renames, cleanups or failed batches. Deleting is safe (they contain nothing).</div>
+    <div id="empt-dirs" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:6px"><div class="lib-empty">Scanning…</div></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="empt-close">Close</button>
+      <button class="btn small" id="empt-delete" style="display:none">🗑 Delete all</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const listEl = $("empt-dirs");
+  try {
+    const d = await (await fetch("/api/library/empty-dirs")).json();
+    const dirs = d.ok ? (d.dirs || []) : [];
+    if (!dirs.length) { listEl.innerHTML = `<div class="lib-empty">No empty folders 🎉</div>`; }
+    else {
+      listEl.innerHTML = dirs.map(x => `<div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-family:var(--mono); font-size:12px">📁 ${escapeHtml(x)}</div>`).join("");
+      $("empt-delete").style.display = "inline-flex";
+    }
+  } catch (e) { listEl.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`; }
+  $("empt-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  $("empt-delete").addEventListener("click", async () => {
+    const btn = $("empt-delete"); btn.disabled = true; btn.textContent = "Deleting…";
+    try {
+      const d = await (await fetch("/api/library/empty-dirs/delete", { method: "POST" })).json();
+      toast(d.ok ? `Removed ${d.removed} empty folder(s) ✓` : (d.error || "Could not clean."), d.ok ? "ok" : "err");
+      back.remove();
+    } catch (e) { toast("Network error: " + e.message, "err"); btn.disabled = false; btn.textContent = "🗑 Delete all"; }
+  });
+}
+
+/* ---------------- 📜 logs viewer ---------------- */
+async function showLogs() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:660px">
+    <h3>📜 Logs</h3>
+    <div class="muted-sm" style="display:flex; gap:8px; align-items:center; margin-bottom:10px">
+      <button class="btn ghost small" id="log-tab-app">app.log</button>
+      <button class="btn ghost small" id="log-tab-launcher">launcher.log</button>
+      <button class="btn ghost small" id="log-refresh" style="margin-left:auto">↻ Refresh</button>
+    </div>
+    <pre id="log-body" style="background:rgba(0,0,0,.45); border:1px solid var(--border); border-radius:10px; padding:12px; font-family:var(--mono); font-size:11px; line-height:1.6; max-height:380px; overflow-y:auto; white-space:pre-wrap; word-break:break-word; color:#c8c8d8"></pre>
+    <div class="modal-actions"><button class="btn ghost small" id="log-close">Close</button></div>
+  </div>`;
+  document.body.appendChild(back);
+  let file = "app";
+  const load = async () => {
+    const body = $("log-body"); body.textContent = "Loading…";
+    try {
+      const d = await (await fetch("/api/logs?file=" + file)).json();
+      body.textContent = d.ok ? (d.lines.length ? d.lines.join("\n") : "(empty log)") : (d.error || "Could not read log.");
+      body.scrollTop = body.scrollHeight;
+    } catch (e) { body.textContent = "Network error: " + e.message; }
+  };
+  $("log-tab-app").addEventListener("click", () => { file = "app"; load(); });
+  $("log-tab-launcher").addEventListener("click", () => { file = "launcher"; load(); });
+  $("log-refresh").addEventListener("click", load);
+  $("log-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  load();
+}
+
+/* ---------------- 📡 scan now ---------------- */
+async function scanNow() {
+  try {
+    const d = await (await fetch("/api/scan-hook", { method: "POST" })).json();
+    toast(d.ok ? "Media-server scan triggered ✓" : (d.error || "No media server configured."), d.ok ? "ok" : "err");
+  } catch (e) { toast("Network error: " + e.message, "err"); }
+}
+
+/* ---------------- ⬆ lossy → lossless upgrade ---------------- */
+async function showUpgrade() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:560px">
+    <h3>⬆ Lossy → Lossless upgrade</h3>
+    <div class="muted-sm">Albums you only have in lossy quality (AAC / MP3 / OGG). Re-downloading at ALAC replaces them in place. Lossless needs the wrapper + your Apple Music login.</div>
+    <div id="upg-list" style="max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:6px"><div class="lib-empty">Scanning…</div></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="upg-close">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const listEl = $("upg-list");
+  try {
+    const d = await (await fetch("/api/library/lossy-albums")).json();
+    if (!d.ok) { listEl.innerHTML = `<div class="lib-empty">${escapeHtml(d.error || "Could not scan.")}</div>`; return; }
+    const albums = d.albums || [];
+    if (!albums.length) { listEl.innerHTML = `<div class="lib-empty">Nothing lossy found — your library is all lossless 🎉</div>`; return; }
+    listEl.innerHTML = albums.map((a, i) => `
+      <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:10px; padding:8px 10px">
+        <div style="flex:1; min-width:0">
+          <b style="font-size:12.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(a.album)}</b>
+          <span class="muted-sm">${escapeHtml(a.artist)} · ${a.track_count} track${a.track_count === 1 ? "" : "s"} · ${escapeHtml(a.quality || a.codec || "lossy")}</span>
+        </div>
+        ${a.url ? `<button class="btn ghost small" data-upg="${i}" title="Re-download at ALAC, overwriting the lossy files">⬆ Re-download lossless</button>`
+                : `<span class="badge">no source link</span>`}
+      </div>`).join("");
+    listEl.querySelectorAll("[data-upg]").forEach(btn => btn.addEventListener("click", async () => {
+      const a = albums[+btn.dataset.upg];
+      btn.disabled = true; btn.textContent = "Queuing…";
+      try {
+        const res = await fetch("/api/download", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls: [a.url], codec: "alac", overwrite: true }) });
+        const data = await res.json();
+        if (!data.ok) { toast(data.error || "Could not queue.", "err"); btn.disabled = false; btn.textContent = "⬆ Re-download lossless"; return; }
+        if (!data.job) { toast(data.message || "Nothing to re-download — check the source link.", "err"); btn.disabled = false; btn.textContent = "⬆ Re-download lossless"; return; }
+        toast(`Queued “${a.album}” at ALAC ✓`, "ok");
+        btn.textContent = "Queued ✓";
+        state.expanded.add(data.job.id);
+        await refreshJobs();
+      } catch (e) { toast("Network error: " + e.message, "err"); btn.disabled = false; btn.textContent = "⬆ Re-download lossless"; }
+    }));
+  } catch (e) { listEl.innerHTML = `<div class="lib-empty">Network error: ${escapeHtml(e.message)}</div>`; }
+  $("upg-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+}
+
+/* ---------------- ▶ smart playlists (saved filters) ---------------- */
+async function showSmartPlaylists() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:520px">
+    <h3>▶ Smart playlists</h3>
+    <div class="muted-sm">Saved filters over your library — artist / album / year / quality / recently added. Export any of them as a real .m3u.</div>
+    <div id="sp-list" style="max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-bottom:10px"></div>
+    <div class="field"><label>Filter name</label><input id="sp-name" type="text" placeholder="e.g. 90s FLAC rock"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+      <div class="field"><label>Artist contains</label><input id="sp-artist" type="text" placeholder="(any)"></div>
+      <div class="field"><label>Album contains</label><input id="sp-album" type="text" placeholder="(any)"></div>
+      <div class="field"><label>Years</label><input id="sp-years" type="text" placeholder="2020 or 2015-2020"></div>
+      <div class="field"><label>Quality (codec)</label><select id="sp-quality"><option value="">Any</option><option value="flac">FLAC</option><option value="alac">ALAC</option><option value="aac">AAC</option><option value="mp3">MP3</option><option value="ogg">OGG (incl. Opus)</option><option value="wav">WAV</option></select></div>
+      <div class="field"><label>Added within (days)</label><input id="sp-days" type="number" min="0" placeholder="0 = any"></div>
+      <div class="field"><label>Min tracks</label><input id="sp-min" type="number" min="0" placeholder="0 = any"></div>
+    </div>
+    <div id="sp-preview" class="hint" style="min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="sp-close">Close</button>
+      <button class="btn ghost small" id="sp-preview-btn">Preview</button>
+      <button class="btn small" id="sp-save">Save filter</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const listEl = $("sp-list");
+  const renderList = async () => {
+    const data = await (await fetch("/api/smart-playlists")).json();
+    const pls = data.playlists || [];
+    listEl.innerHTML = pls.length ? pls.map((p, i) => `<div style="display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:9px; padding:7px 10px; font-size:12.5px">
+      <span style="flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"><b>${escapeHtml(p.name)}</b> <span class="muted-sm">${[p.artist && ("artist:" + p.artist), p.album && ("album:" + p.album), p.years, p.quality, p.recent_days && (p.recent_days + "d"), p.min_tracks && (">=" + p.min_tracks + " tr")].filter(Boolean).join(" · ") || "all"}</span></span>
+      <button class="link-btn" data-preview="${i}">Preview</button>
+      <button class="link-btn" data-export="${i}">Export .m3u</button>
+      <button class="link-btn danger" data-del="${i}">✕</button>
+    </div>`).join("") : `<div class="lib-empty">No smart playlists saved yet.</div>`;
+    listEl.querySelectorAll("[data-preview]").forEach(b => b.addEventListener("click", async () => {
+      const p = pls[+b.dataset.preview];
+      const r = await fetch("/api/smart-playlists/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playlist: p }) }).then(r => r.json());
+      $("sp-preview").textContent = r.ok ? `“${p.name}” matches ${r.count} album(s) · ${r.tracks} track(s).` : (r.error || "Could not preview.");
+    }));
+    listEl.querySelectorAll("[data-export]").forEach(b => b.addEventListener("click", async () => {
+      const p = pls[+b.dataset.export];
+      const r = await fetch("/api/smart-playlists/" + encodeURIComponent(p.name) + "/export", { method: "POST" }).then(r => r.json());
+      toast(r.ok ? r.message : (r.error || "Export failed."), r.ok ? "ok" : "err");
+      if (r.ok) refreshLibrary();
+    }));
+    listEl.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
+      const p = pls[+b.dataset.del];
+      await fetch("/api/smart-playlists/" + encodeURIComponent(p.name), { method: "DELETE" });
+      renderList();
+    }));
+  };
+  const collectFilter = () => ({
+    name: $("sp-name").value.trim(),
+    artist: $("sp-artist").value.trim(),
+    album: $("sp-album").value.trim(),
+    years: $("sp-years").value.trim(),
+    quality: $("sp-quality").value,
+    recent_days: parseInt($("sp-days").value, 10) || 0,
+    min_tracks: parseInt($("sp-min").value, 10) || 0,
+  });
+  $("sp-preview-btn").addEventListener("click", async () => {
+    const pl = collectFilter();
+    if (!pl.name) { toast("Give the filter a name first.", "err"); return; }
+    const r = await fetch("/api/smart-playlists/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playlist: pl }) }).then(r => r.json());
+    $("sp-preview").textContent = r.ok ? `Matches ${r.count} album(s) · ${r.tracks} track(s).` : (r.error || "Could not preview.");
+  });
+  $("sp-save").addEventListener("click", async () => {
+    const pl = collectFilter();
+    if (!pl.name) { toast("Give the filter a name.", "err"); return; }
+    const r = await fetch("/api/smart-playlists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pl) }).then(r => r.json());
+    toast(r.ok ? `Saved “${pl.name}” ✓` : (r.error || "Could not save."), r.ok ? "ok" : "err");
+    renderList();
+  });
+  $("sp-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  renderList();
+}
+
+/* ---------------- ⭐ wishlist ---------------- */
+async function showWishlist() {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal" style="max-width:480px">
+    <h3>⭐ Wishlist</h3>
+    <div class="muted-sm">Links saved for later — queue them all with one click.</div>
+    <div id="wish-list" style="max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-bottom:10px"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="wish-close">Close</button>
+      <button class="btn ghost small" id="wish-clear">Clear all</button>
+      <button class="btn small" id="wish-download">⬇ Download all</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const listEl = $("wish-list");
+  const render = async () => {
+    const data = await (await fetch("/api/wishlist")).json();
+    const w = data.wishlist || [];
+    listEl.innerHTML = w.length ? w.map((it, i) => `<div style="display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.28); border:1px solid var(--border); border-radius:9px; padding:7px 10px; font-size:12.5px">
+      <span style="flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHtml(it.url)}">${escapeHtml(it.title || it.url)}</span>
+      <button class="link-btn" data-q="${i}">Queue</button>
+      <button class="link-btn danger" data-del="${i}">✕</button>
+    </div>`).join("") : `<div class="lib-empty">Wishlist is empty — use the ⭐ buttons (catalog search, album rows…) to save links for later.</div>`;
+    listEl.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", async () => {
+      const it = w[+b.dataset.q];
+      const r = await fetch("/api/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: [it.url] }) }).then(r => r.json());
+      toast(r.ok && r.job ? "Queued ✓" : (r.error || r.message || "Could not queue."), r.ok && r.job ? "ok" : "");
+      if (r.ok && r.job) { state.expanded.add(r.job.id); refreshJobs(); }
+    }));
+    listEl.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
+      await fetch("/api/wishlist/" + (+b.dataset.del), { method: "DELETE" });
+      render();
+    }));
+  };
+  $("wish-close").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  $("wish-download").addEventListener("click", async () => {
+    const r = await fetch("/api/wishlist/download", { method: "POST" }).then(r => r.json());
+    if (r.ok && r.job) {
+      toast(`Queued ${r.queued} wishlist link(s) ✓`, "ok");
+      state.expanded.add(r.job.id);
+      back.remove();
+      refreshJobs();
+    } else {
+      toast(r.error || r.message || "Could not queue.", "err");
+    }
+  });
+  $("wish-clear").addEventListener("click", async () => {
+    const w = ((await (await fetch("/api/wishlist")).json()).wishlist) || [];
+    for (let i = w.length - 1; i >= 0; i--) await fetch("/api/wishlist/" + i, { method: "DELETE" });
+    render();
+  });
+  render();
+}
+
+/* ---------------- ✎ bulk tag editor (multi-album) ---------------- */
+async function openBulkTagEditor(paths) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal">
+    <h3>✎ Bulk edit tags</h3>
+    <div class="muted-sm">Editing ${paths.length} album(s) — any field you fill is applied to every track. Empty = leave unchanged.</div>
+    ${["bulk-title", "bulk-artist", "bulk-album", "bulk-albumartist", "bulk-tracknum", "bulk-date"].map(id =>
+      `<div class="field"><label>${escapeHtml({"bulk-title": "Title", "bulk-artist": "Artist", "bulk-album": "Album", "bulk-albumartist": "Album artist", "bulk-tracknum": "Track #", "bulk-date": "Year"}[id])}</label><input type="text" id="${id}" placeholder="—"></div>`).join("")}
+    <div class="modal-actions">
+      <button class="btn ghost small" id="bulk-cancel">Cancel</button>
+      <button class="btn small" id="bulk-save">Apply to ${paths.length} album(s)</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  $("bulk-cancel").addEventListener("click", () => back.remove());
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  $("bulk-save").addEventListener("click", async () => {
+    const fields = {};
+    for (const [id, key] of [["bulk-title", "title"], ["bulk-artist", "artist"], ["bulk-album", "album"], ["bulk-albumartist", "albumartist"], ["bulk-tracknum", "track"], ["bulk-date", "date"]]) {
+      const v = $(id).value.trim();
+      if (v) fields[key] = v;
+    }
+    if (!Object.keys(fields).length) { toast("Fill at least one field.", "err"); return; }
+    const allPaths = [];
+    for (const ap of paths) {
+      try {
+        const d = await (await fetch("/api/library/album?path=" + encodeURIComponent(ap))).json();
+        if (d.ok) allPaths.push(...(d.tracks || []).map(t => t.path));
+      } catch (e) {}
+    }
+    if (!allPaths.length) { toast("No tracks found in those albums.", "err"); return; }
+    const btn = $("bulk-save"); btn.disabled = true; btn.textContent = "Applying…";
+    const res = await fetch("/api/tags/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: allPaths, ...fields }) });
+    const data = await res.json();
+    toast(data.ok ? `Updated tags on ${data.updated} file(s) ✓` : (data.error || "Could not update."), data.ok ? "ok" : "err");
+    if (data.ok) { back.remove(); bulkSel.clear(); updateBulkBar(); refreshLibrary(); }
+    else btn.disabled = false;
+  });
+}
+
+/* ---------------- settings presets ---------------- */
+function populatePresets(presets) {
+  const sel = $("f-preset-select");
+  if (!sel) return;
+  const names = Object.keys(presets || {});
+  sel.innerHTML = names.length ? names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("") : `<option value="">(no presets saved)</option>`;
+  sel.disabled = !names.length;
+}
+async function savePreset() {
+  const name = $("f-preset-name").value.trim();
+  if (!name) { toast("Name the preset first.", "err"); return; }
+  const r = await fetch("/api/presets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", name }) }).then(r => r.json());
+  if (r.ok) { toast(`Preset “${name}” saved ✓`, "ok"); populatePresets(r.presets); }
+  else toast(r.error || "Could not save preset.", "err");
+}
+async function applyPreset() {
+  const name = $("f-preset-select").value;
+  if (!name) { toast("Select a preset first.", "err"); return; }
+  const r = await fetch("/api/presets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "apply", name }) }).then(r => r.json());
+  if (r.ok) { toast(`Preset “${name}” applied ✓`, "ok"); loadSettings(r.config); }
+  else toast(r.error || "Could not apply preset.", "err");
+}
+async function deletePreset() {
+  const name = $("f-preset-select").value;
+  if (!name) return;
+  const r = await fetch("/api/presets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", name }) }).then(r => r.json());
+  if (r.ok) { toast(`Preset “${name}” deleted`, "ok"); populatePresets(r.presets); $("f-preset-select").value = ""; }
+  else toast(r.error || "Could not delete preset.", "err");
+}
+
+/* ---------------- 📲 PWA install prompt ---------------- */
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const pill = $("pill-install");
+  if (pill) pill.style.display = "inline-flex";
+});
+
 $("btn-download").addEventListener("click", download);
 $("btn-migrate-preview").addEventListener("click", previewMigrate);
 $("btn-migrate-download").addEventListener("click", downloadMigrated);
@@ -3289,6 +4267,45 @@ $("btn-w-setup-start").addEventListener("click", startWrapperSetup);  $("btn-lib
   $("btn-lib-ledger").addEventListener("click", showLedger);
   $("btn-lib-import").addEventListener("click", showImportPanel);
   $("btn-lib-export").addEventListener("click", exportBackup);
+  $("btn-lib-search").addEventListener("click", showCatalogSearch);
+  $("btn-lib-playlists").addEventListener("click", showSmartPlaylists);
+  $("btn-lib-wishlist").addEventListener("click", showWishlist);
+  $("btn-lib-replaygain").addEventListener("click", startReplayGain);
+  $("btn-lib-lyrics").addEventListener("click", startLyricsBackfill);
+  $("btn-lib-upgrade").addEventListener("click", showUpgrade);
+  $("btn-lib-mb").addEventListener("click", () => startMusicBrainz("library"));
+  $("btn-lib-m3u").addEventListener("click", downloadLibraryM3U);
+  $("btn-lib-empty").addEventListener("click", showEmptyDirs);
+  $("btn-lib-logs").addEventListener("click", showLogs);
+  $("btn-lib-scan").addEventListener("click", scanNow);
+  $("btn-pause").addEventListener("click", async () => {
+    await fetch("/api/jobs/pause", { method: "POST" });
+    await refreshJobs();
+  });
+  $("btn-resume").addEventListener("click", async () => {
+    await fetch("/api/jobs/resume", { method: "POST" });
+    await refreshJobs();
+  });
+  $("btn-cancel-all").addEventListener("click", async () => {
+    if (!confirm("Cancel every queued and running download?")) return;
+    const d = await (await fetch("/api/jobs/cancel-all", { method: "POST" })).json();
+    toast(d.ok ? `Cancelled ${d.cancelled} job(s) ✓` : (d.error || "Could not cancel."), d.ok ? "ok" : "err");
+    await refreshJobs();
+  });
+  $("lib-q").addEventListener("change", refreshLibrary);
+  $("lib-recent").addEventListener("change", refreshLibrary);
+  $("btn-bulk-edit").addEventListener("click", () => { if (bulkSel.size) openBulkTagEditor([...bulkSel]); });
+  $("btn-bulk-clear").addEventListener("click", () => { bulkSel.clear(); updateBulkBar(); refreshLibrary(); });
+  $("btn-preset-save").addEventListener("click", savePreset);
+  $("btn-preset-apply").addEventListener("click", applyPreset);
+  $("btn-preset-del").addEventListener("click", deletePreset);
+  $("pill-install").addEventListener("click", async () => {
+    if (!deferredPrompt) { toast("Your browser supports installing the app — look for the install icon in the address bar.", ""); return; }
+    try { await deferredPrompt.prompt(); } catch (e) {}
+    const choice = await deferredPrompt.userChoice.catch(() => ({}));
+    if (choice.outcome === "accepted") $("pill-install").style.display = "none";
+    deferredPrompt = null;
+  });
   // Getting-started drawer (side menu): open from the header Setup pill,
   // close via ✕, the backdrop, or Escape.
   $("pill-setup").addEventListener("click", openSetupDrawer);

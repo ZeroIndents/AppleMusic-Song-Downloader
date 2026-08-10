@@ -150,7 +150,7 @@ DEFAULT_CONFIG = {
     # Spotify downloads (votify). audio_quality is a comma-separated priority
     # list ("320,160" — 320kbps is Premium-only, free accounts get 160). Needs
     # a Spotify cookies file (spotify_cookies_path, else the main one).
-    "spotify_audio_quality": "160",
+    "spotify_audio_quality": "vorbis-medium",
     "spotify_cookies_path": "",
     # Apple Music engine: "gamdl" (glomatico + wrapper-v2) or "amdl"
     # (zhaarey/apple-music-downloader + itouakirai wrapper). Both wrappers use
@@ -162,6 +162,66 @@ DEFAULT_CONFIG = {
     "amdl_alac_max": "192000",       # ALAC max sample rate: 192000 | 96000 | 48000 | 44100
     "amdl_lrc_type": "lyrics",       # lyrics | syllable-lyrics (word-by-word)
     "amdl_cover_size": "5000x5000",  # embedded cover resolution
+    # amdl built-in conversion (convert-after-download in the generated
+    # config.yaml): off | flac | mp3 | opus. When on, amdl converts every
+    # downloaded track and optionally keeps the original too.
+    "amdl_convert": "off",
+    "amdl_convert_keep_original": False,
+    # ── Gamdl file/folder naming (empty = engine default) ──────────────
+    # Single-disc file template, e.g. "{track:02d} {title}" or
+    # "{track:02d} - {artist} - {title}". Empty lets gamdl use its default.
+    "file_name_template": "",
+    # Multi-disc file template — override for multi-disc releases (e.g.
+    # "{disc:02d}-{track:02d} {title}"). Falls back to file_name_template.
+    "multi_disc_file_template": "",
+    # Compilation albums (various artists) go to Compilations/{album} when
+    # set; empty uses the regular album folder template.
+    "compilation_folder_template": "",
+    # Comma-separated gamdl tags to strip (sortArtist, sortTitle, comments,
+    # copyright, lyrics). Empty = keep everything.
+    "exclude_tags": "",
+    # strftime-style date tag template (gamdl --date-tag-template). Empty =
+    # default "%Y-%m-%d".
+    "date_tag_template": "",
+    # Music video remux container: "" (off) | m4v | mp4
+    "mv_remux_format": "",
+    # ── gytmdl (YouTube Music) extras ──────────────────────────────────
+    # Proof-of-Origin token: fixes bot-blocks on bulk runs (see gytmdl docs).
+    "ytm_po_token": "",
+    # Optional song-file template (gytmdl --template-file). Empty = default.
+    "ytm_file_template": "",
+    # ── votify (Spotify) extras ────────────────────────────────────────
+    # Path to a .wvd Widevine device file — required for the FLAC quality
+    # tiers (lossless) on Spotify. Empty = OGG tiers only.
+    "spotify_wvd_path": "",
+    # Native desktop notification when a download batch finishes (macOS
+    # Notification Center / Windows toast / Linux notify-send). Independent of
+    # the in-browser Notification API.
+    "desktop_notify": False,
+    # Saved smart-playlist filters: [{"name", "artist", "album", "quality",
+    # "years" ("2015-2020" | "2020"), "recent_days" (0 = any), "min_tracks"}]
+    "smart_playlists": [],
+    # Wishlist of links saved for later: [{"url", "title", "added"}]
+    "wishlist": [],
+    # Named settings presets: {name: {setting: value, ...}}
+    "settings_presets": {},
+    # ── Media-server scan presets (Navidrome / Plex / Jellyfin) ──────
+    # "server_type": "" (off) | navidrome | plex | jellyfin. When set, the
+    # batch-finished hook and the manual "Scan now" button call the real API
+    # instead of the generic scan_hook_url webhook.
+    "server_type": "",
+    "server_url": "",           # e.g. http://127.0.0.1:4533 (no trailing /)
+    "server_token": "",         # API key / access token
+    "server_section": "1",      # Plex library section id
+    # ── Remote access (LAN) ───────────────────────────────────────────
+    # remote_bind: listen on 0.0.0.0 so the PWA works from a phone on the
+    # same Wi-Fi. remote_token: when non-empty, every /api/* call must send it
+    # (?token= or X-MHR-Token header). Keep the token secret — the API can
+    # download files to the library and run arbitrary engine commands.
+    "remote_bind": False,
+    "remote_token": "",
+    # Auto-delete empty folders after a download batch finishes.
+    "auto_clean_empty": False,
 }
 
 CODEC_LABELS = {
@@ -535,8 +595,10 @@ def format_quality(q: dict | None) -> str:
     """Human label for a quality dict: 'ALAC 24/96' or 'AAC 256'."""
     if not q or not q.get("codec"):
         return ""
-    codec = q["codec"].upper()
-    if codec == "m4a":
+    # Canonical codec name (pcm_* → wav, m4a → aac …) so badges match the
+    # histogram labels.
+    codec = _quality_alias(q["codec"]).upper()
+    if codec == "M4A":
         codec = "AAC"
     parts = [codec]
     if q.get("bits"):
@@ -1128,9 +1190,15 @@ def build_gamdl_command(config: Config, options: dict, urls: list[str]) -> list[
         cmd += ["--album-folder-template", str(config.get("album_folder_template"))]
     if config.get("playlist_folder_template"):
         cmd += ["--playlist-folder-template", str(config.get("playlist_folder_template"))]
-    if config.get("use_album_date"):
-        cmd += ["--use-album-date"]
-    if config.get("overwrite"):
+    # Naming/layout extras (empty settings = engine defaults).
+    if config.get("compilation_folder_template"):
+        cmd += ["--compilation-folder-template", str(config.get("compilation_folder_template"))]
+    if config.get("file_name_template"):
+        cmd += ["--single-disc-file-template", str(config.get("file_name_template"))]
+    if config.get("multi_disc_file_template") or config.get("file_name_template"):
+        cmd += ["--multi-disc-file-template",
+                str(config.get("multi_disc_file_template") or config.get("file_name_template"))]
+    if options.get("overwrite", config.get("overwrite")):
         cmd += ["--overwrite"]
     if config.get("artist_auto_select"):
         cmd += ["--artist-auto-select", config.get("artist_auto_select")]
@@ -1175,7 +1243,11 @@ def build_gytmdl_command(config: Config, options: dict, urls: list[str]) -> list
         cmd += ["-s"]
     if config.get("synced_lyrics") is False:
         cmd += ["--no-synced-lyrics"]
-    if config.get("overwrite"):
+    if config.get("ytm_po_token"):
+        cmd += ["--po-token", str(config.get("ytm_po_token"))]
+    if config.get("ytm_file_template"):
+        cmd += ["--template-file", str(config.get("ytm_file_template"))]
+    if options.get("overwrite", config.get("overwrite")):
         cmd += ["--overwrite"]
     cmd += ["--log-level", "INFO"]
     cmd += urls
@@ -1188,8 +1260,12 @@ def build_votify_command(config: Config, options: dict, urls: list[str]) -> list
     votify needs a Spotify cookies file (Netscape format, exported from
     open.spotify.com with the 'Get cookies.txt LOCALLY' extension) — without it
     there's no session to download from. `spotify_audio_quality` is a
-    comma-separated priority list; 320kbps requires a Premium account.
-    Outputs OGG Vorbis into {artist}/{album}/ — same library layout as gamdl.
+    comma-separated priority list of votify's enum values (vorbis-low/medium/
+    high, aac-medium/high, flac-flac / flac-mp4 / flac-flac-24 / flac-mp4-24);
+    320k (vorbis-high) requires a Premium account, the FLAC tiers need a .wvd.
+    Invalid values are dropped (votify's CLI rejects them with a crash) and the
+    list falls back to vorbis-medium when nothing valid remains.
+    Outputs OGG Vorbis / AAC / FLAC into {artist}/{album}/ — same layout as gamdl.
     """
     binary = spotify_binary() or "votify"
     cmd = [binary, "-n"]  # -n: don't use a config file
@@ -1197,7 +1273,9 @@ def build_votify_command(config: Config, options: dict, urls: list[str]) -> list
         options.get("spotify_cookies_path") or config.get("spotify_cookies_path") or config.get("cookies_path")
     )
     output = expand_path(options.get("output_path") or config.get("output_path"))
-    quality = str(options.get("spotify_audio_quality") or config.get("spotify_audio_quality") or "160")
+    quality = _sanitize_votify_quality(str(
+        options.get("spotify_audio_quality") or config.get("spotify_audio_quality") or "vorbis-medium"
+    ))
 
     cmd += ["-o", output]
     cmd += ["--audio-quality", quality]
@@ -1211,13 +1289,44 @@ def build_votify_command(config: Config, options: dict, urls: list[str]) -> list
         cmd += ["--no-synced-lyrics-file"]
     if config.get("album_folder_template") and "{album_artist}" not in config.get("album_folder_template"):
         cmd += ["--album-folder-template", str(config.get("album_folder_template"))]
-    if config.get("overwrite"):
+    if config.get("spotify_wvd_path"):
+        wvd = expand_path(str(config.get("spotify_wvd_path")))
+        if Path(wvd).exists():
+            cmd += ["--wvd-path", wvd]
+    if options.get("overwrite", config.get("overwrite")):
         cmd += ["--overwrite"]
     if config.get("engine_ledger"):
         cmd += ["--database-path", str(PROJECT_DIR / "data" / "votify.db")]
     cmd += ["--log-level", "INFO"]
     cmd += urls
     return cmd
+
+
+_VOTIFY_QUALITIES = frozenset({
+    "vorbis-low", "vorbis-medium", "vorbis-high",
+    "aac-medium", "aac-high",
+    "flac-flac", "flac-mp4", "flac-flac-24", "flac-mp4-24",
+})
+
+
+def _sanitize_votify_quality(value: str) -> str:
+    """Keep only votify enum values; never pass garbage that crashes the CLI.
+
+    The app once shipped kbps labels ("160", "320,160") which votify's
+    Csv(AudioQuality) type rejects with a usage error on EVERY Spotify job.
+    Map the legacy labels to their modern equivalents and drop anything that
+    isn't a real enum value."""
+    legacy = {"96": "vorbis-low", "160": "vorbis-medium", "320": "vorbis-high"}
+    parts = []
+    for raw in str(value).split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        if item in legacy:
+            item = legacy[item]
+        if item in _VOTIFY_QUALITIES:
+            parts.append(item)
+    return ",".join(parts) if parts else "vorbis-medium"
 
 
 ENGINE_TOOL = {"apple": "gamdl", "spotify": "votify", "youtube": "gytmdl"}
@@ -1240,18 +1349,32 @@ def amdl_available() -> bool:
 
 
 def amdl_image_present() -> bool:
-    """True once the amdl image is pulled locally (cheap check for /api/status)."""
+    """True once the amdl image is pulled locally.
+
+    `docker image inspect` takes ~4s when Docker is running — /api/status
+    polls every few seconds, so the answer is cached for 60s."""
+    now = time.time()
+    if now - _AMDL_IMAGE_CACHE["at"] < 60:
+        return _AMDL_IMAGE_CACHE["value"]
     docker = shutil.which("docker")
     if not docker:
+        _AMDL_IMAGE_CACHE["value"] = False
+        _AMDL_IMAGE_CACHE["at"] = now
         return False
     try:
         out = subprocess.run(
             [docker, "image", "inspect", AMDL_IMAGE],
             capture_output=True, timeout=10,
         )
-        return out.returncode == 0
+        present = out.returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return False
+        present = False
+    _AMDL_IMAGE_CACHE["value"] = present
+    _AMDL_IMAGE_CACHE["at"] = now
+    return present
+
+
+_AMDL_IMAGE_CACHE: dict = {"value": None, "at": 0.0}
 
 
 def amdl_wrapper_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -1272,6 +1395,9 @@ def _amdl_config_text(config: Config, options: dict) -> str:
     exit-on-error is forced on: amdl then exits non-zero on failure instead of
     waiting interactively, which the job system needs for retries."""
     lrc = str(config.get("amdl_lrc_type") or "lyrics")
+    convert = str(config.get("amdl_convert") or "off").strip().lower()
+    convert_on = convert in ("flac", "mp3", "opus")
+    keep_original = bool(config.get("amdl_convert_keep_original"))
     return f'''media-user-token: ""
 authorization-token: ""
 language: ""
@@ -1314,9 +1440,9 @@ mv-audio-type: atmos
 mv-max: 2160
 storefront: "us"
 alac-fix: false
-convert-after-download: false
-convert-format: "flac"
-convert-keep-original: false
+convert-after-download: {"true" if convert_on else "false"}
+convert-format: "{convert if convert_on else 'flac'}"
+convert-keep-original: {"true" if keep_original else "false"}
 convert-skip-if-source-matches: true
 ffmpeg-path: "ffmpeg"
 convert-extra-args: ""
@@ -1849,6 +1975,26 @@ AUDIO_EXTS = {".m4a", ".flac", ".aac", ".mp3", ".wav", ".alac", ".ogg", ".opus"}
 
 # Codec ranking for the format-cleanup tool (lossless > flac > alac > aac).
 _CODEC_PREF = {"flac": 3, "wav": 3, "alac": 2, "aac": 1, "aac_he": 1, "m4a": 1, "mp3": 0}
+
+
+# Codec aliases: ffprobe names and legacy labels → one canonical name each.
+# .m4a probes to "alac"/"aac"; OGG Vorbis probes to "vorbis"; a Wave
+# container probes to its PCM codec. Normalizing keeps the smart-playlist
+# quality filter and the quality histogram consistent with what users pick.
+_QUALITY_ALIASES = {
+    "m4a": "aac", "mp4": "aac", "aac_he": "aac",
+    "vorbis": "ogg", "opus": "ogg",
+    "pcm_s8": "wav", "pcm_u8": "wav", "pcm_s16le": "wav",
+    "pcm_s24le": "wav", "pcm_s32le": "wav", "pcm_f32le": "wav",
+    "pcm_f64le": "wav",
+}
+
+
+def _quality_alias(codec: str) -> str:
+    """Canonical codec name for filters/aggregation (aac, alac, flac, mp3,
+    ogg, wav, …)."""
+    codec = (codec or "").lower()
+    return _QUALITY_ALIASES.get(codec, codec)
 
 
 def file_codec(path: Path) -> str:
@@ -3045,6 +3191,9 @@ class JobManager:
         self._lock = threading.Lock()
         self._latest_id = 0
         self._sem = threading.Semaphore(max(1, int(config.get("max_concurrent") or 2)))
+        # Queue pause: when True, queued jobs hold at the gate (running
+        # subprocesses finish naturally). Set/cleared via /api/jobs/pause|resume.
+        self._paused = False
         # Called (in a thread) when a batch finishes: all jobs idle. Used to
         # ping a music-server rescan hook. app.py sets this.
         self.on_batch_idle = None
@@ -3058,6 +3207,31 @@ class JobManager:
     def any_active(self) -> bool:
         with self._lock:
             return self._any_active_locked()
+
+    def pause(self) -> None:
+        """Hold queued jobs; running ones finish naturally."""
+        self._paused = True
+
+    def resume(self) -> None:
+        """Let queued jobs proceed."""
+        self._paused = False
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def cancel_all(self) -> int:
+        """Cancel every queued/running job. Returns the number cancelled."""
+        n = 0
+        with self._lock:
+            jobs = list(self.jobs.values())
+        for j in jobs:
+            if j.status in ("queued", "running"):
+                j.add_line("Cancelled by 'Cancel all'.")
+                j.cancel()
+                j.set_status("cancelled")
+                n += 1
+        return n
 
     def _maybe_fire_batch_idle(self) -> None:
         # Check-then-set under the lock: two jobs finishing near-simultaneously
@@ -3089,9 +3263,20 @@ class JobManager:
                         if job.manager:
                             job.manager._finish(job)
                         return
+                    # Pause holds scheduled jobs too.
+                    while self._paused and not job._cancel_event.is_set():
+                        time.sleep(0.5)
                     time.sleep(min(15, delay))
                     delay = _seconds_until_window(window)
         while True:
+            # Pause gate: queued jobs wait here while the queue is paused.
+            while self._paused and not job._cancel_event.is_set():
+                time.sleep(0.5)
+            if job._cancel_event.is_set():
+                job.set_status("cancelled")
+                if job.manager:
+                    job.manager._finish(job)
+                return
             # Non-blocking acquire so a cancelled job doesn't wait out a long
             # running batch before its status flips (and its _done event sets).
             while not self._sem.acquire(blocking=False):
@@ -3130,6 +3315,9 @@ class JobManager:
                     if job.manager:
                         job.manager._finish(job)
                     return
+                # A paused queue holds retries too, not just fresh queued jobs.
+                while self._paused and not job._cancel_event.is_set():
+                    time.sleep(0.5)
                 time.sleep(min(5, delay - slept))
                 slept += 5
 
@@ -3244,3 +3432,1043 @@ class JobManager:
             except Exception:
                 continue
         return restored
+
+
+# ---------------------------------------------------------------------------
+# Library power features (v1.1): desktop notifications, ReplayGain, LRCLIB
+# lyrics backfill, quality histogram, ledger export, download history,
+# Apple Music catalog search, hi-res cover upgrades, smart playlists and the
+# wishlist. All pure functions on the library folder / ledger — no app wiring.
+# ---------------------------------------------------------------------------
+
+
+def notify_desktop(title: str, message: str) -> bool:
+    """Fire a native OS notification (macOS Notification Center, Windows toast,
+    Linux notify-send). Best-effort: never raises, returns whether it tried."""
+    try:
+        if sys.platform == "darwin":
+            msg = message.replace("\\", "\\\\").replace('"', '\\"')
+            ttl = title.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.Popen(["osascript", "-e",
+                              f'display notification "{msg}" with title "{ttl}"'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        if sys.platform == "win32":
+            ps = (
+                "$ErrorActionPreference='SilentlyContinue'\n"
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null\n"
+                "$t=[Windows.UI.Notifications.ToastTemplateType]::ToastText02\n"
+                "$x=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($t)\n"
+                "$text=$x.GetElementsByTagName('text')\n"
+                "$text.Item(0).AppendChild($x.CreateTextNode($env:MHR_TITLE)) | Out-Null\n"
+                "$text.Item(1).AppendChild($x.CreateTextNode($env:MHR_MSG)) | Out-Null\n"
+                "$toast=[Windows.UI.Notifications.ToastNotification]::new($x)\n"
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Music High Res').Show($toast)\n"
+            )
+            env = dict(os.environ)
+            env["MHR_TITLE"] = title
+            env["MHR_MSG"] = message
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            return True
+        if shutil.which("notify-send"):
+            subprocess.Popen(["notify-send", title, message],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# ReplayGain (EBU R128 loudness normalization tags)
+# ---------------------------------------------------------------------------
+# Each track is measured with ffmpeg's ebur128 filter; track gain is relative
+# to a -18 LUFS reference (the de-facto RG standard). Album gain is the
+# energy average of the album's tracks, album peak the loudest true peak.
+RG_REFERENCE = -18.0
+
+
+def _ffmpeg_ebur128(path: Path) -> tuple[float | None, float | None]:
+    """Measure one audio file: (integrated loudness LUFS, true peak dBFS)."""
+    ffmpeg = ffmpeg_binary()
+    if not ffmpeg:
+        return None, None
+    try:
+        out = subprocess.run(
+            [ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
+             "-af", "ebur128=peak=true", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=900,
+        )
+        txt = out.stderr or ""
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    # The ebur128 summary layout varies between ffmpeg releases: 8.x prints
+    # "Integrated loudness: I: -9.2 LUFS" on one line, older versions print
+    # "I:" on its own line behind a [Parsed_ebur128_0 @ …] prefix. Try the
+    # strict form first, then a loose fallback so a match failure never
+    # silently skips a file.
+    i = re.search(r"Integrated loudness:\s*I:\s*(-?[\d.]+)\s*LUFS", txt)
+    p = re.search(r"Peak:\s*(-?[\d.]+)\s*dBFS", txt)
+    if not i:
+        i = re.search(r"\bI:\s*(-?[\d.]+)\s*LUFS", txt)
+    if not p:
+        p = re.search(r"\bPeak:\s*(-?[\d.]+)\s*dBFS", txt)
+    loudness = float(i.group(1)) if i else None
+    peak = float(p.group(1)) if p else None
+    return loudness, peak
+
+
+def _mp3_id3(path: Path, f):
+    """Return an ID3 tag object for an MP3, creating it when missing.
+
+    mutagen.File() returns EasyID3 for tagged MP3s and an object with
+    tags=None for untagged ones — both leave raw ID3 writes broken. Opening
+    mutagen.id3.ID3(path) explicitly reads existing tags or creates an empty
+    container (which .save(path) then writes) for tagless files."""
+    try:
+        import mutagen
+    except ImportError:
+        return None
+    if not getattr(mutagen, "id3", None):
+        return None
+    tags = getattr(f, "tags", None)
+    if isinstance(tags, mutagen.id3.ID3):
+        return tags
+    try:
+        from mutagen.mp3 import MP3
+        if isinstance(f, MP3) or str(path).lower().endswith(".mp3"):
+            return mutagen.id3.ID3(path)
+    except Exception:
+        pass
+    return None
+
+
+def _write_replaygain_tags(path: Path, track_gain: float, track_peak: float,
+                           album_gain: float, album_peak: float) -> bool:
+    """Write REPLAYGAIN_* tags into any container mutagen understands."""
+    try:
+        from mutagen import File as MFile
+        import mutagen
+    except ImportError:
+        return False
+    try:
+        f = MFile(path)
+        if f is None:
+            return False
+        tg = f"{track_gain:+.2f} dB"
+        tp = f"{track_peak:.6f}"
+        ag = f"{album_gain:+.2f} dB"
+        ap = f"{album_peak:.6f}"
+        vc_types = (
+            getattr(mutagen, "flac", None) and mutagen.flac.FLAC,
+            getattr(mutagen, "oggvorbis", None) and mutagen.oggvorbis.OggVorbis,
+            getattr(getattr(mutagen, "oggopus", None), "OggOpus", None),
+        )
+        if any(t is not None and isinstance(f, t) for t in vc_types):
+            for key, val in [("replaygain_track_gain", tg), ("replaygain_track_peak", tp),
+                             ("replaygain_album_gain", ag), ("replaygain_album_peak", ap)]:
+                f[key] = [val]
+            f.save()
+            return True
+        if getattr(getattr(mutagen, "mp4", None), "MP4", None) and isinstance(f, mutagen.mp4.MP4):
+            from mutagen.mp4 import MP4FreeForm
+            for k, v in [("----:com.apple.iTunes:REPLAYGAIN_TRACK_GAIN", tg),
+                         ("----:com.apple.iTunes:REPLAYGAIN_TRACK_PEAK", tp),
+                         ("----:com.apple.iTunes:REPLAYGAIN_ALBUM_GAIN", ag),
+                         ("----:com.apple.iTunes:REPLAYGAIN_ALBUM_PEAK", ap)]:
+                f[k] = [MP4FreeForm(v.encode("utf-8"))]
+            f.save()
+            return True
+        id3 = _mp3_id3(path, f)
+        if id3:
+            from mutagen.id3 import TXXX
+            for desc, val in [("REPLAYGAIN_TRACK_GAIN", tg), ("REPLAYGAIN_TRACK_PEAK", tp),
+                              ("REPLAYGAIN_ALBUM_GAIN", ag), ("REPLAYGAIN_ALBUM_PEAK", ap)]:
+                id3.delall("TXXX:" + desc)
+                id3.add(TXXX(encoding=3, desc=desc, text=[val]))
+            id3.save(path)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _album_audio_files(album_dir: Path, limit: int = 300) -> list[Path]:
+    try:
+        return [p for p in sorted(album_dir.iterdir())
+                if p.is_file() and p.suffix.lower() in AUDIO_EXTS][:limit]
+    except OSError:
+        return []
+
+
+def replaygain_album(album_dir: Path) -> dict:
+    """Measure every track in an album and return per-track loudness + the
+    album aggregate. Never writes tags — that's replaygain_scan's job."""
+    results: dict[str, dict] = {}
+    for p in _album_audio_files(album_dir):
+        lufs, peak = _ffmpeg_ebur128(p)
+        if lufs is None:
+            continue
+        results[str(p)] = {"loudness": lufs, "peak": peak}
+    if not results:
+        return {"tracks": {}, "album_gain": None, "album_peak": None}
+    import math
+    energy = sum(10 ** (v["loudness"] / 10.0) for v in results.values())
+    album_loudness = 10 * math.log10(energy / len(results))
+    album_peak = max((v.get("peak") or 0.0) for v in results.values())
+    return {
+        "tracks": results,
+        "album_gain": RG_REFERENCE - album_loudness,
+        "album_peak": album_peak,
+    }
+
+
+def replaygain_scan(output_dir: str, album_paths: list[str] | None = None,
+                    max_albums: int = 400) -> dict:
+    """Scan (a subset of) the library, measure each album, and write RG tags.
+    Returns {ok, albums, tracks, failed, errors}. Long-running — callers run
+    it in a background task thread."""
+    if album_paths:
+        albums = [Path(p) for p in album_paths]
+    else:
+        lib = scan_library(output_dir)
+        albums = [Path(al["path"]) for a in lib.get("artists", []) for al in a.get("albums", [])]
+    albums = albums[:max_albums]
+    updated = 0
+    failed = 0
+    errors: list[str] = []
+    for album in albums:
+        try:
+            agg = replaygain_album(album)
+            if not agg["tracks"]:
+                continue
+            album_gain = agg["album_gain"]
+            album_peak = agg["album_peak"]
+            for path_str, v in agg["tracks"].items():
+                if _write_replaygain_tags(Path(path_str), RG_REFERENCE - v["loudness"],
+                                          v.get("peak") or 0.0, album_gain or 0.0,
+                                          album_peak or 0.0):
+                    updated += 1
+                else:
+                    failed += 1
+        except Exception as e:
+            failed += 1
+            errors.append(f"{album.name}: {e}")
+    return {"ok": True, "albums": len(albums), "tracks": updated, "failed": failed,
+            "errors": errors[:20]}
+
+
+# ---------------------------------------------------------------------------
+# LRCLIB lyrics backfill (free synced-lyrics API, lrclib.net)
+# ---------------------------------------------------------------------------
+def _fetch_lrclib(artist: str, title: str, album: str, duration: float | None) -> str | None:
+    import urllib.parse
+    params = {"artist_name": artist, "track_name": title, "album_name": album}
+    if duration:
+        params["duration"] = str(int(duration))
+    url = "https://lrclib.net/api/get?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MusicHighRes/1.1 (lyrics backfill)"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        if not isinstance(data, dict):
+            return None
+        text = data.get("syncedLyrics") or data.get("plainLyrics") or ""
+        return text.strip() or None
+    except (OSError, ValueError):
+        return None
+
+
+def lrclib_backfill(output_dir: str, max_files: int = 1500) -> dict:
+    """Fetch synced (or plain) lyrics from lrclib.net for library tracks that
+    don't already have a .lrc sidecar. Writes {stem}.lrc next to each file.
+    Returns {ok, fetched, already, no_match, errors}."""
+    root = Path(output_dir)
+    fetched = 0
+    already = 0
+    no_match = 0
+    errors: list[str] = []
+    count = 0
+    try:
+        audio = [p for p in root.rglob("*")
+                 if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+                 and not any(part.startswith(".") for part in p.relative_to(root).parts)]
+    except OSError:
+        audio = []
+    for p in audio:
+        if count >= max_files:
+            break
+        count += 1
+        lrc = p.with_suffix(".lrc")
+        if lrc.exists():
+            already += 1
+            continue
+        tags = read_audio_tags(p)
+        title = tags.get("title") or p.stem
+        artist = tags.get("artist") or ""
+        if not artist or not title:
+            continue
+        text = _fetch_lrclib(artist, title, tags.get("album") or "", _probe_duration(p))
+        if not text:
+            no_match += 1
+            continue
+        try:
+            lrc.write_text(text, encoding="utf-8")
+            fetched += 1
+        except OSError as e:
+            errors.append(f"{p.name}: {e}")
+    return {"ok": True, "fetched": fetched, "already": already,
+            "no_match": no_match, "errors": errors[:20]}
+
+
+# ---------------------------------------------------------------------------
+# Quality histogram + download history (from the cached probes / ledger)
+# ---------------------------------------------------------------------------
+def quality_histogram(output_dir: str, max_files: int = 20000) -> dict:
+    """Aggregate probed quality across the whole library: codec, bit-depth and
+    sample-rate distributions plus the lossless/lossy split."""
+    root = Path(output_dir)
+    codecs: dict[str, int] = {}
+    bits: dict[str, int] = {}
+    rates: dict[str, int] = {}
+    lossless = lossy = total = 0
+    try:
+        audio = [p for p in root.rglob("*")
+                 if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+                 and not any(part.startswith(".") for part in p.relative_to(root).parts)]
+    except OSError:
+        audio = []
+    for p in audio[:max_files]:
+        q = probe_audio_quality(p)
+        if not q or not q.get("codec"):
+            continue
+        total += 1
+        codec = _quality_alias(q["codec"])
+        codecs[codec] = codecs.get(codec, 0) + 1
+        if codec in ("alac", "flac", "wav"):
+            lossless += 1
+        else:
+            lossy += 1
+        if q.get("bits"):
+            b = str(q["bits"])
+            bits[b] = bits.get(b, 0) + 1
+        if q.get("rate"):
+            r = str(round(q["rate"] / 1000))
+            rates[r] = rates.get(r, 0) + 1
+    return {
+        "tracks": total, "lossless": lossless, "lossy": lossy,
+        "by_codec": dict(sorted(codecs.items(), key=lambda kv: -kv[1])),
+        "by_bits": dict(sorted(bits.items(), key=lambda kv: -int(kv[0]))),
+        "by_rate": dict(sorted(rates.items(), key=lambda kv: -int(kv[0]))),
+    }
+
+
+def ledger_export(output_dir: str, fmt: str = "csv") -> tuple[str, str]:
+    """Dump the whole SQLite ledger. Returns (content, suggested_filename)."""
+    def _dump(conn):
+        rows = conn.execute(
+            "SELECT path, url, engine, title, artist, album, codec, size, "
+            "downloaded_at, job_id FROM tracks ORDER BY downloaded_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    try:
+        rows = _ledger_query(_dump)
+    except sqlite3.Error:
+        rows = []
+    if fmt == "json":
+        return json.dumps(rows, indent=2, ensure_ascii=False), "ledger.json"
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    if rows:
+        writer.writerow(list(rows[0].keys()))
+        for r in rows:
+            writer.writerow(list(r.values()))
+    return buf.getvalue(), "ledger.csv"
+
+
+def library_history(output_dir: str) -> dict:
+    """Download history from the ledger: counts per month/year, top artists,
+    total jobs recorded."""
+    def _dump(conn):
+        return conn.execute("SELECT downloaded_at, artist, size FROM tracks").fetchall()
+
+    try:
+        rows = _ledger_query(_dump)
+    except sqlite3.Error:
+        rows = []
+    by_month: dict[str, int] = {}
+    by_year: dict[str, int] = {}
+    artists: dict[str, int] = {}
+    for r in rows:
+        ts = r["downloaded_at"]
+        if not ts:
+            continue
+        lt = time.localtime(ts)
+        ym = f"{lt.tm_year:04d}-{lt.tm_mon:02d}"
+        by_month[ym] = by_month.get(ym, 0) + 1
+        by_year[str(lt.tm_year)] = by_year.get(str(lt.tm_year), 0) + 1
+        name = r["artist"] or "Unknown"
+        artists[name] = artists.get(name, 0) + 1
+    return {
+        "total": len(rows),
+        "by_month": dict(sorted(by_month.items())),
+        "by_year": dict(sorted(by_year.items())),
+        "top_artists": [{"name": k, "tracks": v}
+                        for k, v in sorted(artists.items(), key=lambda kv: -kv[1])[:10]],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Apple Music catalog search (iTunes Search API) — find + queue without
+# leaving the app. Also powers the hi-res cover upgrade.
+# ---------------------------------------------------------------------------
+def catalog_search(query: str, entity: str = "album", country: str = "US",
+                   limit: int = 24) -> list[dict]:
+    import urllib.parse
+    itunes_entity = {"song": "song", "artist": "musicArtist"}.get(entity, "album")
+    url = ("https://itunes.apple.com/search?term=" + urllib.parse.quote(query) +
+           f"&entity={itunes_entity}&country={urllib.parse.quote(str(country))}&limit={limit}&media=music")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MusicHighRes/1.1"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        return []
+    results = []
+    for item in (data.get("results") or []):
+        art = item.get("artworkUrl100") or ""
+        if itunes_entity == "musicArtist":
+            results.append({
+                "kind": "artist",
+                "name": item.get("artistName") or "",
+                "artist": item.get("artistName") or "",
+                "artist_id": item.get("artistId"),
+                "url": item.get("artistLinkUrl") or "",
+                "art": art.replace("100x100bb", "400x400bb") if art else "",
+                "track_count": 0,
+                "year": "",
+            })
+            continue
+        url_v = item.get("collectionViewUrl") or item.get("trackViewUrl") or ""
+        if not url_v:
+            continue
+        results.append({
+            "kind": entity,
+            "name": item.get("collectionName") or item.get("trackName") or "",
+            "artist": item.get("artistName") or "",
+            "album": item.get("collectionName") or "",
+            "url": url_v,
+            "art": art.replace("100x100bb", "400x400bb") if art else "",
+            "track_count": item.get("trackCount") or 0,
+            "year": (item.get("releaseDate") or "")[:4],
+        })
+    return results
+
+
+def artist_discography(artist_id: str, country: str = "US", limit: int = 200) -> list[dict]:
+    """Albums by an Apple Music artist (iTunes Lookup API, entity=album)."""
+    import urllib.parse
+    url = ("https://itunes.apple.com/lookup?id=" + urllib.parse.quote(str(artist_id)) +
+           f"&entity=album&country={urllib.parse.quote(str(country))}&limit={limit}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MusicHighRes/1.1"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        return []
+    results = []
+    for item in (data.get("results") or []):
+        if item.get("wrapperType") != "collection":
+            continue
+        art = item.get("artworkUrl100") or ""
+        url_v = item.get("collectionViewUrl") or ""
+        if not url_v:
+            continue
+        results.append({
+            "kind": "album",
+            "name": item.get("collectionName") or "",
+            "artist": item.get("artistName") or "",
+            "album": item.get("collectionName") or "",
+            "url": url_v,
+            "art": art.replace("100x100bb", "400x400bb") if art else "",
+            "track_count": item.get("trackCount") or 0,
+            "year": (item.get("releaseDate") or "")[:4],
+        })
+    return results
+
+
+def lossy_albums(output_dir: str) -> list[dict]:
+    """Albums whose best file is lossy (AAC/MP3/OGG/Opus) — candidates for a
+    lossless re-download. Joins the library scan with the ledger's source URL
+    so the UI can re-queue each album's Apple Music link at ALAC (+ overwrite)."""
+    lossless = {"alac", "flac", "wav"}
+    out: list[dict] = []
+    try:
+        scanned = scan_library(output_dir)
+    except Exception:
+        scanned = None
+    if scanned and scanned.get("artists"):
+        for artist in scanned["artists"]:
+            for album in artist.get("albums", []):
+                q = album_quality(Path(album["path"]))
+                codec = _quality_alias((q or {}).get("codec") or "")
+                if codec in lossless:
+                    continue
+                out.append({
+                    "artist": artist.get("name") or "",
+                    "album": album.get("name") or "",
+                    "path": album["path"],
+                    "track_count": album.get("track_count") or 0,
+                    "quality": format_quality(q),
+                    "codec": codec,
+                    "url": album_source_url(album["path"]),
+                })
+    out.sort(key=lambda a: (a["artist"].lower(), a["album"].lower()))
+    return out
+
+
+def album_source_url(album_path: str) -> str:
+    """First non-empty source URL the ledger recorded under an album folder
+    (used for 'Open on Apple Music' album rows)."""
+    album = Path(album_path).resolve()
+    prefix = str(album) + os.sep
+
+    def _lookup(conn):
+        row = conn.execute(
+            "SELECT url FROM tracks WHERE path LIKE ? AND url != '' LIMIT 1",
+            (prefix + "%",),
+        ).fetchone()
+        return row[0] if row else ""
+
+    try:
+        return _ledger_query(_lookup) or ""
+    except sqlite3.Error:
+        return ""
+
+
+def upgrade_album_cover(output_dir: str, album_path: str,
+                        size: int = 1200, country: str = "US") -> dict:
+    """Re-fetch the album's cover at high resolution from the iTunes Search
+    API and re-embed it into every track in the folder."""
+    album = Path(album_path)
+    files = _album_audio_files(album)
+    if not files:
+        return {"ok": False, "error": "No audio files in that album folder."}
+    tags = read_audio_tags(files[0])
+    artist = tags.get("artist") or ""
+    title = tags.get("album") or album.name
+    if not title:
+        return {"ok": False, "error": "Album has no tags to search with."}
+    import urllib.parse
+    term = urllib.parse.quote(f"{artist} {title}")
+    url = (f"https://itunes.apple.com/search?term={term}&entity=album&media=music&limit=8&country={urllib.parse.quote(str(country))}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MusicHighRes/1.1"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        return {"ok": False, "error": "Could not reach the iTunes Search API."}
+    best = None
+    art_low = artist.lower()
+    for item in (data.get("results") or []):
+        name = (item.get("collectionName") or "").lower()
+        if title.lower() in name or name in title.lower():
+            art = item.get("artworkUrl100") or ""
+            if art:
+                best = art
+                break
+        elif not best and art_low and art_low in (item.get("artistName") or "").lower():
+            best = item.get("artworkUrl100") or ""
+    if not best:
+        return {"ok": False, "error": "No artwork found for that album on the iTunes catalog."}
+    hi = best.replace("100x100bb", f"{size}x{size}bb")
+    try:
+        req = urllib.request.Request(hi, headers={"User-Agent": "MusicHighRes/1.1"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            img = resp.read()
+        mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+    except OSError:
+        return {"ok": False, "error": "Could not download the artwork."}
+    updated = 0
+    failed = 0
+    for p in files:
+        if _embed_cover(p, img, mime):
+            updated += 1
+        else:
+            failed += 1
+    return {"ok": True, "tracks": updated, "failed": failed, "bytes": len(img),
+            "url": hi}
+
+
+def _embed_cover(path: Path, data: bytes, mime: str) -> bool:
+    """Embed cover art into any mutagen-supported audio file."""
+    try:
+        from mutagen import File as MFile
+        import mutagen
+    except ImportError:
+        return False
+    is_jpg = "jpeg" in mime or "jpg" in mime
+    try:
+        f = MFile(path)
+        if f is None:
+            return False
+        flac = getattr(mutagen, "flac", None)
+        if flac and isinstance(f, flac.FLAC):
+            from mutagen.flac import Picture
+            pic = Picture()
+            pic.type = 3
+            pic.mime = mime
+            pic.data = data
+            f.clear_pictures()
+            f.add_picture(pic)
+            f.save()
+            return True
+        mp4 = getattr(mutagen, "mp4", None)
+        if mp4 and isinstance(f, mp4.MP4):
+            from mutagen.mp4 import MP4Cover
+            fmt = MP4Cover.FORMAT_JPEG if is_jpg else MP4Cover.FORMAT_PNG
+            f["covr"] = [MP4Cover(data, imageformat=fmt)]
+            f.save()
+            return True
+        id3 = _mp3_id3(path, f)
+        if id3:
+            from mutagen.id3 import APIC
+            id3.delall("APIC")
+            id3.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+            id3.save(path)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Smart playlists (saved filters) — match against the scanned library and
+# export a real .m3u
+# ---------------------------------------------------------------------------
+def smart_playlist_matches(output_dir: str, pl: dict) -> dict:
+    """Evaluate a saved filter against the library.
+
+    Filter keys (all optional): artist (substring), album (substring),
+    quality (codec name from the quality probe: flac/alac/aac/mp3/ogg/opus…),
+    years ("2020" or "2015-2020"), recent_days (added within N days; 0 = any),
+    min_tracks. Returns matched albums + total track count."""
+    artist_q = (str(pl.get("artist") or "")).strip().lower()
+    album_q = (str(pl.get("album") or "")).strip().lower()
+    quality_q = (str(pl.get("quality") or "")).strip().lower()
+    years = str(pl.get("years") or "").strip()
+    year_range = None
+    if years:
+        parts = [p.strip() for p in years.replace("–", "-").split("-")]
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            year_range = (int(parts[0]), int(parts[1]))
+        elif len(parts) == 1 and parts[0].isdigit():
+            year_range = (int(parts[0]), int(parts[0]))
+    recent_days = 0
+    try:
+        recent_days = max(0, int(pl.get("recent_days") or 0))
+    except (TypeError, ValueError):
+        recent_days = 0
+    min_tracks = 0
+    try:
+        min_tracks = max(0, int(pl.get("min_tracks") or 0))
+    except (TypeError, ValueError):
+        min_tracks = 0
+
+    lib = scan_library(output_dir)
+    now = time.time()
+    matched = []
+    for artist in lib.get("artists", []):
+        if artist_q and artist_q not in (artist.get("name") or "").lower():
+            continue
+        for album in artist.get("albums", []):
+            if album_q and album_q not in (album.get("name") or "").lower():
+                continue
+            if min_tracks and (album.get("track_count") or 0) < min_tracks:
+                continue
+            q = album_quality(Path(album["path"]))
+            codec = _quality_alias((q or {}).get("codec") or "")
+            if quality_q and codec != _quality_alias(quality_q):
+                continue
+            added = ledger_album_added(output_dir, album["path"])
+            if recent_days and (not added or added < now - recent_days * 86400):
+                continue
+            year = None
+            files = _album_audio_files(Path(album["path"]), limit=1)
+            if files:
+                year = (read_audio_tags(files[0]).get("date") or "")[:4] or None
+            if year_range:
+                try:
+                    y = int(year)
+                except (TypeError, ValueError):
+                    continue
+                if not (year_range[0] <= y <= year_range[1]):
+                    continue
+            matched.append({
+                "artist": artist.get("name") or "",
+                "album": album.get("name") or "",
+                "path": album["path"],
+                "track_count": album.get("track_count") or 0,
+                "quality": format_quality(q),
+                "year": year,
+            })
+    return {"matched": matched, "count": len(matched),
+            "tracks": sum(m.get("track_count") or 0 for m in matched)}
+
+
+def export_smart_playlist(output_dir: str, pl: dict) -> tuple[bool, str, str]:
+    """Write a smart playlist's matched tracks to
+    Playlists/Smart/{name}.m3u (absolute paths, #EXTINF headers). Returns
+    (ok, message, written_path)."""
+    name = (str(pl.get("name") or "")).strip() or "Smart playlist"
+    safe = re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "Smart playlist"
+    result = smart_playlist_matches(output_dir, pl)
+    files: list[Path] = []
+    for m in result.get("matched", []):
+        files.extend(_album_audio_files(Path(m["path"])))
+    if not files:
+        return False, "No tracks match that filter.", ""
+    lines = ["#EXTM3U"]
+    for p in files:
+        tags = read_audio_tags(p)
+        lines.append(f"#EXTINF:{int(_probe_duration(p) or 0)},{tags.get('artist') or ''} - {tags.get('title') or p.stem}")
+        lines.append(str(p))
+    dest = Path(output_dir) / "Playlists" / "Smart"
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        out = dest / f"{safe}.m3u"
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        return False, f"Could not write the playlist: {e}", ""
+    return True, f"Wrote {len(files)} track(s) to {out}", str(out)
+
+
+# ===========================================================================
+# v1.1+ must-have batch: media-server scan presets, MusicBrainz tag fixing,
+# .m3u + CUE exports, empty-folder housekeeping, catalog ownership enrichment
+# ===========================================================================
+
+
+def server_scan_request(config: Config) -> tuple[str, str, dict, dict] | None:
+    """Build the scan request for the configured media server.
+
+    Returns (method, url, headers, json_body) or None when no preset is
+    configured. Called by the batch-finished hook and the manual "Scan now"
+    button — replaces the raw webhook for the three supported servers:
+
+    * Navidrome: POST /api/scan  (header X-ND-Authorization: Bearer <token>)
+    * Plex:      GET  /library/sections/<id>/refresh?X-Plex-Token=<token>
+    * Jellyfin:  POST /Library/Refresh?api_key=<token>
+    """
+    stype = str(config.get("server_type") or "").strip().lower()
+    base = str(config.get("server_url") or "").strip().rstrip("/")
+    token = str(config.get("server_token") or "").strip()
+    if not stype or not base:
+        return None
+    if stype == "navidrome":
+        return ("POST", f"{base}/api/scan",
+                {"Content-Type": "application/json",
+                 "X-ND-Authorization": f"Bearer {token}" if token else "",
+                 "User-Agent": "music-high-res"},
+                {"refresh": True})
+    if stype == "plex":
+        q = f"?X-Plex-Token={token}" if token else ""
+        section = str(config.get("server_section") or "1").strip() or "1"
+        return ("GET", f"{base}/library/sections/{section}/refresh{q}",
+                {"Accept": "application/json", "User-Agent": "music-high-res"}, {})
+    if stype == "jellyfin":
+        q = f"?api_key={token}" if token else ""
+        return ("POST", f"{base}/Library/Refresh{q}",
+                {"Content-Type": "application/json", "User-Agent": "music-high-res"}, {})
+    return None
+
+
+# ---------------------------------------------------------------------------
+# MusicBrainz tag fixing
+# ---------------------------------------------------------------------------
+_MB_LAST_CALL = [0.0]  # module-level clock for MusicBrainz's 1 req/s policy
+
+
+def _mb_search(query: str, limit: int = 5) -> list[dict]:
+    """One MusicBrainz recording search with the required rate limit."""
+    import urllib.parse
+    global _MB_LAST_CALL
+    elapsed = time.time() - _MB_LAST_CALL[0]
+    if elapsed < 1.05:
+        time.sleep(1.05 - elapsed)
+    url = ("https://musicbrainz.org/ws/2/recording/?query=" +
+           urllib.parse.quote(query) +
+           f"&fmt=json&limit={limit}")
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "MusicHighRes/1.1 (local music manager)",
+            "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        _MB_LAST_CALL[0] = time.time()
+        return data.get("recordings") or []
+    except (OSError, ValueError):
+        return []
+
+
+def _mb_pick(recordings: list[dict], want_ms: float | None) -> dict | None:
+    """Best recording match by duration proximity (MusicBrainz durations are
+    in ms). Prefers a hit within ±3s; otherwise the smallest difference."""
+    if not recordings:
+        return None
+    if want_ms is None:
+        return recordings[0]
+    scored = []
+    for r in recordings:
+        d = r.get("length")
+        if not d:
+            continue
+        diff = abs(float(d) - want_ms)
+        scored.append((diff, r))
+    scored.sort(key=lambda t: t[0])
+    return (scored[0][1] if scored else recordings[0])
+
+
+def musicbrainz_fix_album(album_path: str | Path) -> dict:
+    """Auto-fix track tags from MusicBrainz for one album folder.
+
+    Matches each track's (artist, title, duration) against the MusicBrainz
+    recording database and writes canonical title/artist/year (and album tags
+    when the file has none). Never deletes existing tags it can't confirm.
+    Returns {total, fixed, skipped, notes} for the task log.
+    """
+    album_dir = Path(album_path)
+    files = _album_audio_files(album_dir)
+    fixed = skipped = 0
+    notes: list[str] = []
+    for p in files:
+        tags = read_audio_tags(p)
+        title = (tags.get("title") or p.stem).strip()
+        artist = (tags.get("artist") or "").strip()
+        if not title:
+            skipped += 1
+            continue
+        # Escape embedded double quotes — a title like "Say \"Hello\"" would
+        # otherwise produce a malformed Lucene query and silently miss.
+        def _q(s: str) -> str:
+            return s.replace('"', '\\"')
+        query = f'recording:"{_q(title)}"'
+        primary = artist
+        if artist:
+            # Multi-artist credits ("A, B & C", "A feat. B") rarely match the
+            # full phrase — search the primary name only, then fall back.
+            primary = re.split(r"[,;&]|feat\.|ft\.", artist)[0].strip()
+            query += f' AND artist:"{_q(primary)}"'
+        recs = _mb_search(query)
+        if not recs and primary and primary != artist:
+            recs = _mb_search(f'recording:"{_q(title)}" AND artist:"{_q(artist)}"')
+        if not recs:
+            recs = _mb_search(f'recording:"{_q(title)}"')
+        want_ms = None
+        dur = _probe_duration(p)
+        if dur:
+            want_ms = dur * 1000.0
+        best = _mb_pick(recs, want_ms)
+        if not best:
+            skipped += 1
+            continue
+        fields: dict = {"title": best.get("title") or title}
+        if artist:
+            fields["artist"] = artist
+        rels = best.get("releases") or []
+        if rels:
+            rel = rels[0]
+            if not (tags.get("album") or "").strip():
+                fields["album"] = rel.get("title") or tags.get("album") or ""
+                cc = rel.get("artist-credit") or []
+                if cc and not (tags.get("albumartist") or "").strip():
+                    names = [c.get("name") for c in cc if isinstance(c, dict) and c.get("name")]
+                    if names:
+                        fields["albumartist"] = ", ".join(names)
+            date = rel.get("date") or ""
+            if date and not (tags.get("date") or "").strip():
+                fields["date"] = date[:4]
+        # Only count as "fixed" when something actually changed — a track with
+        # already-canonical tags counts as skipped, not fixed.
+        changed = any(
+            str(tags.get(k) or "").strip() != str(v or "").strip()
+            for k, v in fields.items()
+        )
+        ok, msg = write_audio_tags(p, fields)
+        if ok and changed:
+            fixed += 1
+        else:
+            skipped += 1
+            if not ok:
+                notes.append(f"{p.name}: {msg}")
+    return {"total": len(files), "fixed": fixed, "skipped": skipped, "notes": notes}
+
+
+def musicbrainz_scan(output_dir: str) -> dict:
+    """Run musicbrainz_fix_album over every album in the library."""
+    albums_fixed = total_fixed = total = 0
+    notes: list[str] = []
+    try:
+        scanned = scan_library(output_dir)
+    except Exception:
+        scanned = None
+    if scanned and scanned.get("artists"):
+        for artist in scanned["artists"]:
+            for album in artist.get("albums", []):
+                total += 1
+                r = musicbrainz_fix_album(album["path"])
+                total_fixed += r.get("fixed", 0)
+                if r.get("fixed"):
+                    albums_fixed += 1
+                for n in r.get("notes") or []:
+                    notes.append(n)
+    return {"albums": total, "albums_fixed": albums_fixed,
+            "tracks_fixed": total_fixed, "notes": notes}
+
+
+# ---------------------------------------------------------------------------
+# .m3u exports + CUE sheets + empty-dir housekeeping
+# ---------------------------------------------------------------------------
+def _m3u_lines(files: list[Path]) -> list[str]:
+    lines = ["#EXTM3U"]
+    for p in files:
+        tags = read_audio_tags(p)
+        lines.append(f"#EXTINF:{int(_probe_duration(p) or 0)},{tags.get('artist') or ''} - {tags.get('title') or p.stem}")
+        lines.append(str(p))
+    return lines
+
+
+def export_library_m3u(output_dir: str) -> str:
+    """Full-library playlist (absolute paths)."""
+    root = Path(output_dir)
+    files = []
+    try:
+        files = [p for p in root.rglob("*")
+                 if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+                 and not any(part.startswith(".") for part in p.relative_to(root).parts)
+                 and "Playlists" not in p.relative_to(root).parts[:1]]
+    except OSError:
+        pass
+    return "\n".join(_m3u_lines(files)) + "\n"
+
+
+def album_m3u(album_path: str | Path) -> str:
+    """One album's tracks as an .m3u."""
+    return "\n".join(_m3u_lines(_album_audio_files(Path(album_path)))) + "\n"
+
+
+def _cue_index(seconds: float) -> str:
+    """Seconds → CUE INDEX 'mm:ss:ff' (75 frames per second). Pure frame math
+    so rounding at the top of a second can never emit 'ss:60'."""
+    total = max(0, int(round((seconds if seconds > 0 else 0.0) * 75)))
+    mm, rem = divmod(total, 4500)  # 4500 frames = 60s
+    ss, ff = divmod(rem, 75)
+    return f"{mm:02d}:{ss:02d}:{ff:02d}"
+
+
+def generate_cue_sheet(album_path: str | Path) -> tuple[bool, str, str]:
+    """Write a .cue for one album folder (from embedded tags + durations).
+
+    Standard CUE with a FILE per track and cumulative INDEX offsets — the
+    format CD players, foobar2000 and XLD all accept. Returns (ok, msg, path).
+    """
+    album_dir = Path(album_path)
+    files = _album_audio_files(album_dir)
+    if not files:
+        return False, "No audio files in that folder.", ""
+    tags = read_audio_tags(files[0])
+    album_title = (tags.get("album") or album_dir.name).strip()
+    album_artist = (tags.get("albumartist") or tags.get("artist") or "Unknown Artist").strip()
+    genre = (tags.get("genre") or "").strip()
+    date = (tags.get("date") or "").strip()
+
+    def _q(s: str) -> str:
+        return '"' + (s or "").replace('"', "'") + '"'
+
+    lines = []
+    if genre:
+        lines.append(f'REM GENRE {_q(genre)}')
+    if date:
+        lines.append(f'REM DATE {_q(date)}')
+    lines.append(f'PERFORMER {_q(album_artist)}')
+    lines.append(f'TITLE {_q(album_title)}')
+    track_no = 0
+    offset = 0.0
+    for p in files:
+        track_no += 1
+        t = read_audio_tags(p)
+        track_title = (t.get("title") or p.stem).strip()
+        track_artist = (t.get("artist") or album_artist).strip()
+        dur = _probe_duration(p) or 0.0
+        suffix = p.suffix.lower()
+        # Technically-correct FILE type per container (most players ignore it,
+        # but MP4/FLAC are the right markers for those files).
+        marker = "MP4" if suffix in (".m4a", ".mp4", ".aac") else "FLAC" if suffix == ".flac" else "WAVE"
+        lines.append(f'FILE {_q(p.name)} {marker}')
+        lines.append(f'  TRACK {track_no:02d} AUDIO')
+        lines.append(f'    TITLE {_q(track_title)}')
+        lines.append(f'    PERFORMER {_q(track_artist)}')
+        lines.append(f'    INDEX 01 {_cue_index(offset)}')
+        offset += dur
+    # Sanitize the filename — album titles can contain '/' etc.
+    safe_title = re.sub(r'[\\/:*?"<>|]', "_", album_title).strip() or "Album"
+    try:
+        out = album_dir / f"{safe_title}.cue"
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        return False, f"Could not write the cue sheet: {e}", ""
+    return True, f"Wrote {len(files)} track(s) to {out.name}", str(out)
+
+
+def find_empty_dirs(output_dir: str) -> list[str]:
+    """Directories with no files at all (stale after renames/cleanups),
+    excluding hidden folders and the trash."""
+    root = Path(output_dir)
+    empty = []
+    if not root.is_dir():
+        return empty
+    try:
+        for d in sorted(root.rglob("*"), key=lambda p: -len(p.parts)):
+            if not d.is_dir():
+                continue
+            rel = d.relative_to(root).parts
+            if any(part.startswith(".") for part in rel):
+                continue
+            if rel and rel[0] == ".trash":
+                continue
+            try:
+                if not any(d.iterdir()):
+                    empty.append(str(d))
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return empty
+
+
+def delete_empty_dirs(output_dir: str) -> int:
+    """Remove empty directories, looping until stable so nested empty chains
+    fully collapse (a parent only becomes empty after its child is removed).
+    Returns how many were removed."""
+    removed = 0
+    while True:
+        batch = find_empty_dirs(output_dir)
+        if not batch:
+            break
+        n = 0
+        for d in batch:
+            try:
+                Path(d).rmdir()
+                n += 1
+            except OSError:
+                continue
+        removed += n
+        if n == 0:
+            break
+    return removed

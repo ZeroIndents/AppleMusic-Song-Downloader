@@ -11,6 +11,8 @@ import logging
 import os
 import sys
 import threading
+import time
+import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -32,8 +34,30 @@ from downloader import (
     gamdl_pinned_ok,
     gamdl_version,
     album_quality,
+    album_source_url,
+    album_m3u,
     amdl_available,
     amdl_image_present,
+    artist_discography,
+    catalog_search,
+    delete_empty_dirs,
+    export_library_m3u,
+    export_smart_playlist,
+    find_empty_dirs,
+    generate_cue_sheet,
+    ledger_owned_count,
+    lossy_albums,
+    musicbrainz_fix_album,
+    musicbrainz_scan,
+    server_scan_request,
+    ledger_export,
+    library_history,
+    lrclib_backfill,
+    notify_desktop,
+    quality_histogram,
+    replaygain_scan,
+    smart_playlist_matches,
+    upgrade_album_cover,
     cleanup_library_files,
     cleanup_preview,
     delta_filter_urls,
@@ -141,25 +165,76 @@ def _reject_cross_origin_mutations():
     return jsonify({"ok": False, "error": "Cross-origin request rejected."}), 403
 
 
-def _fire_scan_hook_async() -> None:
-    """POST the configured rescan hook when a download batch finishes."""
-    hook = str(config.get("scan_hook_url") or "").strip()
-    if not hook:
+@app.before_request
+def _enforce_remote_token():
+    """Remote-access token gate. Active only when Settings → Remote access
+    token is set. Protects every /api/* call (except /api/status, so health
+    checks and the UI's "enter token" detection keep working). Send the token
+    as ?token= or the X-MHR-Token header."""
+    token = str(config.get("remote_token") or "").strip()
+    if not token:
         return
-    import urllib.request as _urlreq
-    import json as _json
+    if not request.path.startswith("/api/") or request.path == "/api/status":
+        return
+    given = (request.headers.get("X-MHR-Token") or request.args.get("token") or "").strip()
     try:
-        body = _json.dumps({"event": "rescan", "source": "music-high-res"}).encode()
-        req = _urlreq.Request(
-            hook, data=body,
-            headers={"Content-Type": "application/json", "User-Agent": "music-high-res"},
-            method="POST",
-        )
-        with _urlreq.urlopen(req, timeout=8):
-            pass
-        logging.getLogger("app").info("Scan hook fired: %s", hook)
-    except OSError as e:
-        logging.getLogger("app").warning("Scan hook failed: %s", e)
+        import hmac
+        ok = given and hmac.compare_digest(given, token)
+    except Exception:
+        ok = False
+    if ok:
+        return
+    return jsonify({"ok": False, "error": "Access token required. Enter it in Settings → Remote access, or append ?token=…"}), 401
+
+
+def _fire_scan_hook_async() -> None:
+    """When a download batch finishes: trigger a scan on the configured media
+    server (Navidrome/Plex/Jellyfin preset) or POST the raw webhook, fire a
+    native desktop notification if enabled, and sweep empty folders when
+    auto-clean is on."""
+    preset = server_scan_request(config)
+    if preset:
+        method, url, headers, body = preset
+        import urllib.request as _urlreq
+        import json as _json
+        try:
+            data = _json.dumps(body).encode() if method == "POST" else None
+            req = _urlreq.Request(
+                url, data=data,
+                headers={k: v for k, v in headers.items() if v},
+                method=method,
+            )
+            with _urlreq.urlopen(req, timeout=8):
+                pass
+            logging.getLogger("app").info("Media-server scan triggered: %s", url)
+        except OSError as e:
+            logging.getLogger("app").warning("Media-server scan failed: %s", e)
+    else:
+        hook = str(config.get("scan_hook_url") or "").strip()
+        if hook:
+            import urllib.request as _urlreq
+            import json as _json
+            try:
+                body = _json.dumps({"event": "rescan", "source": "music-high-res"}).encode()
+                req = _urlreq.Request(
+                    hook, data=body,
+                    headers={"Content-Type": "application/json", "User-Agent": "music-high-res"},
+                    method="POST",
+                )
+                with _urlreq.urlopen(req, timeout=8):
+                    pass
+                logging.getLogger("app").info("Scan hook fired: %s", hook)
+            except OSError as e:
+                logging.getLogger("app").warning("Scan hook failed: %s", e)
+    if config.get("desktop_notify"):
+        notify_desktop("Music High Res", "Your downloads have finished.")
+    if config.get("auto_clean_empty"):
+        try:
+            n = delete_empty_dirs(str(expand_path(config.get("output_path"))))
+            if n:
+                logging.getLogger("app").info("Auto-clean removed %d empty folder(s).", n)
+        except Exception as e:
+            logging.getLogger("app").warning("Auto-clean failed: %s", e)
 
 
 manager.on_batch_idle = _fire_scan_hook_async
@@ -180,6 +255,34 @@ def _restart_watcher_if_needed() -> None:
 @app.get("/")
 def index():
     return send_from_directory(STATIC_DIR, "index.html")
+
+
+# PWA shell assets (manifest, service worker, icons) — the app has no static
+# folder configured, so these few files get explicit routes.
+@app.get("/manifest.json")
+def pwa_manifest():
+    resp = send_from_directory(STATIC_DIR, "manifest.json")
+    # Never let browsers cache these 24h+ — a stale manifest/SW would keep the
+    # installed PWA on an old version long after updates ship.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/sw.js")
+def pwa_sw():
+    resp = send_from_directory(STATIC_DIR, "sw.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/icon.svg")
+def pwa_icon_svg():
+    return send_from_directory(STATIC_DIR, "icon.svg")
+
+
+@app.get("/icons/<path:name>")
+def pwa_icons(name: str):
+    return send_from_directory(STATIC_DIR / "icons", name)
 
 
 # ----------------------------------------------------------------------
@@ -222,6 +325,50 @@ def api_get_config():
     return jsonify(config.data)
 
 
+def _normalize_config_value(key: str, value):
+    """Coerce one config value to the right type. Shared by the Settings save
+    route and backup restore — a malformed backup must never be able to write
+    garbage (e.g. a string where an int is expected) into config.json, which
+    would crash the app at startup (JobManager does int() on max_concurrent).
+    Returns None when the key should be skipped."""
+    if key in ("output_path", "cookies_path", "wrapper_url"):
+        value = str(value).strip()
+        if not value:
+            return None
+    elif key in ("cover_size",):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return None
+    elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync", "amdl_convert_keep_original", "desktop_notify", "remote_bind", "auto_clean_empty"):
+        value = bool(value)
+    elif key in ("max_concurrent", "auto_retry"):
+        try:
+            value = max(0, int(value))
+        except (TypeError, ValueError):
+            return None
+    elif key in ("watch_folder", "notify_url", "spotify_wvd_path", "remote_token",
+                 "server_type", "server_url", "server_token", "server_section"):
+        value = str(value).strip()
+    elif key == "smart_playlists":
+        if not isinstance(value, list):
+            return None
+        clean = []
+        for item in value:
+            if isinstance(item, dict):
+                clean.append({k: v for k, v in item.items() if isinstance(v, (str, int, float, bool))})
+        value = clean
+    elif key == "wishlist":
+        if not isinstance(value, list):
+            return None
+        value = [i for i in value if isinstance(i, dict)]
+    elif key == "settings_presets":
+        if not isinstance(value, dict):
+            return None
+        value = {str(k): v for k, v in value.items() if isinstance(v, dict)}
+    return value
+
+
 @app.post("/api/config")
 def api_save_config():
     body = request.get_json(silent=True) or {}
@@ -229,25 +376,9 @@ def api_save_config():
     for key, value in body.items():
         if key not in config.data:
             continue
-        if key in ("output_path", "cookies_path", "wrapper_url"):
-            value = str(value).strip()
-            if not value:
-                continue
-        elif key in ("cover_size",):
-            try:
-                value = int(value)
-            except (TypeError, ValueError):
-                continue
-        elif key in ("use_wrapper", "synced_lyrics", "save_cover", "overwrite", "convert_to_flac", "save_playlist", "copy_playlist_folders", "use_album_date", "skip_owned", "playlist_hardlink", "verify_quality", "engine_ledger", "delta_sync"):
-            value = bool(value)
-        elif key in ("max_concurrent", "auto_retry"):
-            try:
-                value = max(0, int(value))
-            except (TypeError, ValueError):
-                continue
-        elif key in ("watch_folder", "notify_url"):
-            value = str(value).strip()
-        normalized[key] = value
+        v = _normalize_config_value(key, value)
+        if v is not None:
+            normalized[key] = v
     changes = config.update(normalized)
     _restart_watcher_if_needed()
     return jsonify({"ok": True, "changes": changes, "config": config.data})
@@ -436,11 +567,25 @@ def api_library_export():
 
 @app.post("/api/scan-hook")
 def api_scan_hook():
-    """Ping the configured music-server rescan URL (Navidrome/Plex/Jellyfin
-    webhook or anything that accepts a POST). Also fires after each batch."""
+    """Trigger a scan on the configured media server (Navidrome / Plex /
+    Jellyfin preset) or POST the raw scan-hook webhook. Also fires after each
+    batch — this button is the manual "scan now"."""
+    preset = server_scan_request(config)
+    if preset:
+        method, url, headers, body = preset
+        import urllib.request as _urlreq
+        import json as _json
+        try:
+            data = _json.dumps(body).encode() if method == "POST" else None
+            req = _urlreq.Request(url, data=data, headers={k: v for k, v in headers.items() if v}, method=method)
+            with _urlreq.urlopen(req, timeout=8):
+                pass
+        except OSError as e:
+            return jsonify({"ok": False, "error": f"Scan request failed: {e}"}), 502
+        return jsonify({"ok": True, "server": config.get("server_type")})
     hook = str(config.get("scan_hook_url") or "").strip()
     if not hook:
-        return jsonify({"ok": False, "error": "No scan hook configured (Settings → Scan hook URL)."}), 400
+        return jsonify({"ok": False, "error": "No media server configured (Settings → Media server) and no scan-hook URL."}), 400
     import urllib.request as _urlreq
     try:
         body = json.dumps({"event": "rescan", "source": "music-high-res"}).encode()
@@ -450,6 +595,23 @@ def api_scan_hook():
     except OSError as e:
         return jsonify({"ok": False, "error": f"Hook failed: {e}"}), 502
     return jsonify({"ok": True})
+
+
+@app.get("/api/library/album/source")
+def api_library_album_source():
+    """Source URL of an album folder (from the SQLite ledger) — powers the
+    'Open on Apple Music' link on album rows. Fetched lazily on click so a
+    Library scan doesn't pay for 300 ledger queries."""
+    raw = str(request.args.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing ?path= parameter."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(raw)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    return jsonify({"ok": True, "url": album_source_url(str(target))})
 
 
 @app.get("/api/library/album")
@@ -700,6 +862,502 @@ def api_library_ledger_rebuild():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ----------------------------------------------------------------------
+# Background tasks (ReplayGain scan, lyrics backfill, cover upgrades) —
+# long-running library jobs run in a thread; the UI polls /api/tasks/<id>
+# ----------------------------------------------------------------------
+_TASK_LOCK = threading.Lock()
+_TASKS: dict[str, dict] = {}
+
+
+def _start_task(name: str, fn, *args) -> str:
+    """Run fn(*args) in a daemon thread and return a task id to poll.
+
+    Finished tasks are kept so the UI can poll the result, but the registry is
+    capped — oldest tasks are evicted so a long-running server doesn't grow
+    it unboundedly."""
+    tid = uuid.uuid4().hex[:10]
+    with _TASK_LOCK:
+        _TASKS[tid] = {"id": tid, "name": name, "status": "running", "started": time.time()}
+        if len(_TASKS) > 30:
+            for old in sorted(_TASKS, key=lambda t: _TASKS[t]["started"])[: len(_TASKS) - 30]:
+                _TASKS.pop(old, None)
+
+    def _run():
+        try:
+            result = fn(*args) or {}
+            with _TASK_LOCK:
+                _TASKS[tid] = {**_TASKS[tid], "status": "done", "result": result}
+        except Exception as e:  # never strand a task in "running"
+            logging.getLogger("app").exception("Task %s failed", name)
+            with _TASK_LOCK:
+                _TASKS[tid] = {**_TASKS[tid], "status": "failed", "error": str(e)}
+
+    threading.Thread(target=_run, daemon=True).start()
+    return tid
+
+
+@app.get("/api/tasks/<task_id>")
+def api_task(task_id: str):
+    with _TASK_LOCK:
+        task = _TASKS.get(task_id)
+    if task is None:
+        return jsonify({"ok": False, "error": "Task not found."}), 404
+    return jsonify({"ok": True, **task})
+
+
+@app.post("/api/library/replaygain")
+def api_library_replaygain():
+    """Start a ReplayGain scan (EBU R128) over the whole library or a subset
+    of album folders. Returns a task id — poll /api/tasks/<id>."""
+    body = request.get_json(silent=True) or {}
+    paths = body.get("paths") or []
+    if isinstance(paths, str):
+        paths = [paths]
+    output = expand_path(config.get("output_path"))
+    tid = _start_task("ReplayGain scan", replaygain_scan, output, [p for p in paths if isinstance(p, str) and p.strip()] or None)
+    return jsonify({"ok": True, "task": tid})
+
+
+@app.post("/api/library/lyrics")
+def api_library_lyrics():
+    """Start an LRCLIB lyrics backfill over the library (writes .lrc sidecars
+    for tracks that don't have one). Returns a task id."""
+    output = expand_path(config.get("output_path"))
+    tid = _start_task("Lyrics backfill", lrclib_backfill, output)
+    return jsonify({"ok": True, "task": tid})
+
+
+@app.post("/api/library/cover-upgrade")
+def api_library_cover_upgrade():
+    """Re-fetch one album's cover at high resolution from the iTunes catalog
+    and re-embed it into every track in the folder. Returns a task id."""
+    body = request.get_json(silent=True) or {}
+    album_path = str(body.get("album_path") or "").strip()
+    if not album_path:
+        return jsonify({"ok": False, "error": "No album path given."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(album_path)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    if not target.is_dir():
+        return jsonify({"ok": False, "error": "That album folder no longer exists."}), 404
+    tid = _start_task("Cover upgrade", upgrade_album_cover, str(output), str(target),
+                      1200, str(config.get("storefront") or "US"))
+    return jsonify({"ok": True, "task": tid})
+
+
+@app.get("/api/library/histogram")
+def api_library_histogram():
+    """Quality histogram across the whole library: codec / bit-depth /
+    sample-rate distributions (uses the cached ffprobe results)."""
+    try:
+        hist = quality_histogram(expand_path(config.get("output_path")))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, **hist})
+
+
+@app.get("/api/library/ledger/export")
+def api_library_ledger_export():
+    """Download the SQLite ledger as CSV or JSON."""
+    fmt = str(request.args.get("fmt") or "csv").lower()
+    if fmt not in ("csv", "json"):
+        return jsonify({"ok": False, "error": "fmt must be 'csv' or 'json'."}), 400
+    content, filename = ledger_export(expand_path(config.get("output_path")), fmt)
+    from flask import Response as _Resp
+    resp = _Resp(content, mimetype="text/csv" if fmt == "csv" else "application/json")
+    resp.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return resp
+
+
+@app.get("/api/stats/history")
+def api_stats_history():
+    """Download history from the SQLite ledger: totals per month/year and top
+    artists by tracks downloaded."""
+    try:
+        return jsonify({"ok": True, **library_history(expand_path(config.get("output_path")))})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.get("/api/catalog/search")
+def api_catalog_search():
+    """Search the Apple Music catalog (iTunes Search API) for albums or
+    songs — lets you find and queue links without leaving the app."""
+    q = str(request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Missing ?q= search term."}), 400
+    entity = str(request.args.get("entity") or "album").strip()
+    results = catalog_search(q, entity, str(config.get("storefront") or "US"))
+    _enrich_catalog_owned(results)
+    return jsonify({"ok": True, "results": results, "count": len(results)})
+
+
+@app.get("/api/catalog/artist")
+def api_catalog_artist():
+    """Albums by an Apple Music artist (iTunes Lookup, entity=album) — the
+    second half of the in-app catalog search's artist entity."""
+    artist_id = str(request.args.get("id") or "").strip()
+    if not artist_id:
+        return jsonify({"ok": False, "error": "Missing ?id= artist id."}), 400
+    results = artist_discography(artist_id, str(config.get("storefront") or "US"))
+    _enrich_catalog_owned(results)
+    return jsonify({"ok": True, "results": results, "count": len(results)})
+
+
+@app.get("/api/library/lossy-albums")
+def api_library_lossy_albums():
+    """Albums whose best file is lossy (AAC/MP3/OGG) — candidates for a
+    lossless re-download. Each entry carries its ledger source URL so the UI
+    can re-queue it at ALAC with overwrite."""
+    output = expand_path(config.get("output_path"))
+    try:
+        return jsonify({"ok": True, "albums": lossy_albums(str(output))})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+def _enrich_catalog_owned(results: list[dict]) -> None:
+    """Stamp each catalog result with how many of its tracks the ledger owns
+    (exact ownership: album → album title + artist, song → track + artist).
+    The UI shows ✓ owned badges and offers 'Download missing'."""
+    if not results:
+        return
+    output = str(expand_path(config.get("output_path")))
+    for r in results:
+        if r.get("kind") == "artist":
+            r["owned"] = 0
+            continue
+        owned = ledger_owned_count(
+            output, "song" if r.get("kind") == "song" else "album",
+            r.get("name") or "", r.get("artist") or "",
+        )
+        r["owned"] = owned if owned is not None else 0
+
+
+def _resolve_album_path(raw: str):
+    """Resolve a user-supplied album path, refusing anything outside the output
+    folder (same containment guard as /api/library/album/source). Returns the
+    resolved path or None."""
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    target = Path(os.path.expanduser(raw)).resolve()
+    try:
+        target.relative_to(output)
+    except ValueError:
+        return None
+    return target
+
+
+@app.get("/api/library/m3u")
+def api_library_m3u():
+    """Download a .m3u playlist — whole library (?scope=library) or one album
+    (?scope=album&path=...). Absolute paths, #EXTINF headers."""
+    scope = str(request.args.get("scope") or "library")
+    from flask import Response as _Resp
+    from urllib.parse import quote as _quote
+    try:
+        if scope == "album":
+            raw = str(request.args.get("path") or "").strip()
+            if not raw:
+                return jsonify({"ok": False, "error": "Missing ?path= album folder."}), 400
+            target = _resolve_album_path(raw)
+            if target is None:
+                return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+            content = album_m3u(target)
+            fname = target.name + ".m3u"
+        else:
+            output = expand_path(config.get("output_path"))
+            content = export_library_m3u(str(output))
+            fname = "Music High Res Library.m3u"
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    resp = _Resp(content, mimetype="audio/x-mpegurl")
+    resp.headers["Content-Disposition"] = f"attachment; filename={_quote(fname)}"
+    return resp
+
+
+@app.get("/api/library/cue")
+def api_library_cue():
+    """Generate a .cue sheet for one album folder (from embedded tags)."""
+    raw = str(request.args.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing ?path= album folder."}), 400
+    target = _resolve_album_path(raw)
+    if target is None:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    ok, msg, written = generate_cue_sheet(target)
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 400
+    return jsonify({"ok": True, "message": msg, "path": written})
+
+
+@app.get("/api/library/empty-dirs")
+def api_library_empty_dirs():
+    """List folders with no files at all (stale after renames/cleanups)."""
+    output = expand_path(config.get("output_path"))
+    try:
+        return jsonify({"ok": True, "dirs": find_empty_dirs(str(output))})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.post("/api/library/empty-dirs/delete")
+def api_library_empty_dirs_delete():
+    """Delete all empty folders (bottom-up, files-only check)."""
+    output = expand_path(config.get("output_path"))
+    try:
+        removed = delete_empty_dirs(str(output))
+        return jsonify({"ok": True, "removed": removed})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.post("/api/library/restore")
+def api_library_restore():
+    """Restore settings from a backup JSON ({config: {...}}). Only known keys
+    are applied; the library index part is informational and ignored."""
+    body = request.get_json(silent=True) or {}
+    incoming = body.get("config")
+    if not isinstance(incoming, dict) or not incoming:
+        return jsonify({"ok": False, "error": "Backup has no config object."}), 400
+    # Normalize exactly like the Settings save route (same type coercion) so a
+    # malformed backup can't write garbage into config.json, and batch it into
+    # a single file write. The access token is never restored.
+    normalized = {}
+    for k, v in incoming.items():
+        if k in config.data and k != "remote_token":
+            nv = _normalize_config_value(k, v)
+            if nv is not None:
+                normalized[k] = nv
+    changes = config.update(normalized)
+    _restart_watcher_if_needed()
+    return jsonify({"ok": True, "applied": list(changes.keys()), "count": len(changes)})
+
+
+@app.post("/api/library/musicbrainz")
+def api_library_musicbrainz():
+    """Auto-fix tags from MusicBrainz as a background task — one album
+    ({path}) or the whole library (scope=library). MusicBrainz enforces a
+    1 req/s rate limit, handled server-side; a full-library run takes a while.
+    """
+    body = request.get_json(silent=True) or {}
+    scope = str(body.get("scope") or "album")
+    output = expand_path(config.get("output_path"))
+    if scope == "library":
+        tid = _start_task("musicbrainz", musicbrainz_scan, str(output))
+        return jsonify({"ok": True, "task": tid})
+    raw = str(body.get("path") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "Missing path (or scope=library)."}), 400
+    target = _resolve_album_path(raw)
+    if target is None:
+        return jsonify({"ok": False, "error": "Path is outside the output folder."}), 403
+    tid = _start_task("musicbrainz", musicbrainz_fix_album, target)
+    return jsonify({"ok": True, "task": tid})
+
+
+@app.post("/api/jobs/pause")
+def api_jobs_pause():
+    manager.pause()
+    return jsonify({"ok": True, "paused": True})
+
+
+@app.post("/api/jobs/resume")
+def api_jobs_resume():
+    manager.resume()
+    return jsonify({"ok": True, "paused": False})
+
+
+@app.post("/api/jobs/cancel-all")
+def api_jobs_cancel_all():
+    n = manager.cancel_all()
+    return jsonify({"ok": True, "cancelled": n})
+
+
+# ----------------------------------------------------------------------
+# Smart playlists (saved filters) + wishlist (saved links)
+# ----------------------------------------------------------------------
+@app.get("/api/smart-playlists")
+def api_smart_playlists():
+    return jsonify({"ok": True, "playlists": config.get("smart_playlists") or []})
+
+
+@app.post("/api/smart-playlists")
+def api_smart_playlist_save():
+    """Save (or update by name) a smart-playlist filter."""
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Give the playlist a name."}), 400
+    try:
+        recent_days = max(0, int(body.get("recent_days") or 0))
+    except (TypeError, ValueError):
+        recent_days = 0
+    try:
+        min_tracks = max(0, int(body.get("min_tracks") or 0))
+    except (TypeError, ValueError):
+        min_tracks = 0
+    pl = {
+        "name": name,
+        "artist": str(body.get("artist") or "").strip(),
+        "album": str(body.get("album") or "").strip(),
+        "quality": str(body.get("quality") or "").strip(),
+        "years": str(body.get("years") or "").strip(),
+        "recent_days": recent_days,
+        "min_tracks": min_tracks,
+    }
+    playlists = [p for p in (config.get("smart_playlists") or []) if not isinstance(p, dict) or p.get("name") != name]
+    playlists.append(pl)
+    config.set("smart_playlists", playlists)
+    return jsonify({"ok": True, "playlists": playlists})
+
+
+@app.post("/api/smart-playlists/preview")
+def api_smart_playlist_preview():
+    """Evaluate a filter (saved or draft) and return matching albums/tracks."""
+    body = request.get_json(silent=True) or {}
+    pl = body.get("playlist") or body
+    if not isinstance(pl, dict):
+        return jsonify({"ok": False, "error": "No playlist filter given."}), 400
+    result = smart_playlist_matches(expand_path(config.get("output_path")), pl)
+    return jsonify({"ok": True, **result})
+
+
+@app.post("/api/smart-playlists/<name>/export")
+def api_smart_playlist_export(name: str):
+    """Export a saved filter to Playlists/Smart/{name}.m3u."""
+    playlists = config.get("smart_playlists") or []
+    pl = next((p for p in playlists if isinstance(p, dict) and p.get("name") == name), None)
+    if not pl:
+        return jsonify({"ok": False, "error": "No such smart playlist."}), 404
+    ok, msg, path = export_smart_playlist(expand_path(config.get("output_path")), pl)
+    return jsonify({"ok": ok, "message": msg, "path": path}), (200 if ok else 400)
+
+
+@app.delete("/api/smart-playlists/<name>")
+def api_smart_playlist_delete(name: str):
+    playlists = [p for p in (config.get("smart_playlists") or []) if not (isinstance(p, dict) and p.get("name") == name)]
+    config.set("smart_playlists", playlists)
+    return jsonify({"ok": True, "playlists": playlists})
+
+
+@app.get("/api/wishlist")
+def api_wishlist():
+    return jsonify({"ok": True, "wishlist": config.get("wishlist") or []})
+
+
+@app.post("/api/wishlist")
+def api_wishlist_add():
+    """Save a link to the wishlist (download later, one click)."""
+    body = request.get_json(silent=True) or {}
+    url = str(body.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "No URL given."}), 400
+    wish = [w for w in (config.get("wishlist") or []) if isinstance(w, dict) and w.get("url") != url]
+    wish.insert(0, {"url": url, "title": str(body.get("title") or url)[:200], "added": time.time()})
+    config.set("wishlist", wish)
+    return jsonify({"ok": True, "wishlist": wish})
+
+
+@app.delete("/api/wishlist/<int:index>")
+def api_wishlist_remove(index: int):
+    wish = [w for w in (config.get("wishlist") or []) if isinstance(w, dict)]
+    if 0 <= index < len(wish):
+        wish.pop(index)
+    config.set("wishlist", wish)
+    return jsonify({"ok": True, "wishlist": wish})
+
+
+@app.post("/api/wishlist/download")
+def api_wishlist_download():
+    """Queue every URL currently on the wishlist as one download job."""
+    wish = [w.get("url") for w in (config.get("wishlist") or []) if isinstance(w, dict) and w.get("url")]
+    if not wish:
+        return jsonify({"ok": False, "error": "Your wishlist is empty."}), 400
+    job = manager.start(wish, {})
+    return jsonify({"ok": True, "job": job.summary(), "queued": len(wish)})
+
+
+@app.post("/api/tags/bulk")
+def api_tags_bulk():
+    """Apply the same tag fields to many files at once (bulk tag editor)."""
+    body = request.get_json(silent=True) or {}
+    paths = body.get("paths") or []
+    if isinstance(paths, str):
+        paths = [paths]
+    paths = [p for p in paths if isinstance(p, str) and p.strip()][:200]
+    fields = {k: body[k] for k in ("title", "artist", "album", "albumartist", "track", "date") if k in body}
+    if not paths:
+        return jsonify({"ok": False, "error": "No file paths given."}), 400
+    if not fields:
+        return jsonify({"ok": False, "error": "No tag fields to set."}), 400
+    output = Path(expand_path(config.get("output_path"))).resolve()
+    updated, failed, errors = 0, 0, []
+    for p in paths:
+        target = Path(os.path.expanduser(p)).resolve()
+        try:
+            target.relative_to(output)
+        except ValueError:
+            failed += 1
+            errors.append(f"{target.name}: outside output folder")
+            continue
+        if not target.is_file():
+            failed += 1
+            errors.append(f"{target.name}: not found")
+            continue
+        ok, msg = write_audio_tags(target, fields)
+        if ok:
+            updated += 1
+        else:
+            failed += 1
+            errors.append(f"{target.name}: {msg}")
+    return jsonify({"ok": True, "updated": updated, "failed": failed, "errors": errors[:20]})
+
+
+# ----------------------------------------------------------------------
+# Settings presets — save/apply/delete named bundles of settings
+# ----------------------------------------------------------------------
+_PRESET_KEYS = [
+    "output_path", "song_codec_priority", "synced_lyrics_format", "cover_size",
+    "artist_auto_select", "convert_to_flac", "album_folder_template",
+    "playlist_folder_template", "music_video_resolution", "music_video_codec_priority",
+    "cover_format", "use_album_date", "ytm_itag", "spotify_audio_quality",
+    "file_name_template", "compilation_folder_template", "exclude_tags",
+    "date_tag_template", "mv_remux_format", "max_concurrent", "auto_retry",
+    "skip_owned", "delta_sync", "desktop_notify",
+]
+
+
+@app.post("/api/presets")
+def api_presets():
+    """Manage named settings presets. Body: {action: save|apply|delete, name}."""
+    body = request.get_json(silent=True) or {}
+    action = str(body.get("action") or "").strip()
+    name = str(body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Give the preset a name."}), 400
+    presets = {str(k): v for k, v in (config.get("settings_presets") or {}).items() if isinstance(v, dict)}
+    if action == "save":
+        presets[name] = {k: config.data.get(k) for k in _PRESET_KEYS if k in config.data}
+        config.set("settings_presets", presets)
+        return jsonify({"ok": True, "presets": presets})
+    if action == "apply":
+        preset = presets.get(name)
+        if not preset:
+            return jsonify({"ok": False, "error": "No such preset."}), 404
+        config.update({k: v for k, v in preset.items() if k in config.data})
+        _restart_watcher_if_needed()
+        return jsonify({"ok": True, "applied": preset, "config": config.data})
+    if action == "delete":
+        presets.pop(name, None)
+        config.set("settings_presets", presets)
+        return jsonify({"ok": True, "presets": presets})
+    return jsonify({"ok": False, "error": "action must be save, apply or delete."}), 400
+
+
 @app.get("/api/stats")
 def api_stats():
     """Library dashboard stats: totals, codec split, top artists."""
@@ -879,7 +1537,7 @@ def api_download():
 
     options = {
         k: body[k]
-        for k in ("codec", "output_path", "cookies_path", "use_wrapper", "wrapper_url")
+        for k in ("codec", "output_path", "cookies_path", "use_wrapper", "wrapper_url", "overwrite")
         if k in body
     }
     # Ledger-driven delta sync: for Spotify/YouTube album+playlist links, drop
@@ -889,6 +1547,11 @@ def api_download():
     delta = body.get("delta")
     if delta is None:
         delta = bool(config.get("delta_sync"))
+    # Overwrite jobs mean "re-download regardless" — delta filtering would
+    # drop already-owned tracks and make the lossy→lossless upgrade a silent
+    # no-op (the lossy files are in the ledger, so nothing survives the filter).
+    if bool(options.get("overwrite")):
+        delta = False
     skipped_tracks = 0
     if delta:
         try:
@@ -1073,7 +1736,7 @@ def api_convert():
 
 @app.get("/api/jobs")
 def api_jobs():
-    return jsonify({"jobs": manager.list()})
+    return jsonify({"jobs": manager.list(), "paused": manager.paused})
 
 
 @app.get("/api/jobs/<job_id>")
@@ -1101,7 +1764,7 @@ def api_job_retry(job_id: str):
     # an ALAC retry doesn't silently fall back to cookies/AAC.
     options = {
         k: v for k, v in job.options.items()
-        if k in ("codec", "output_path", "cookies_path", "use_wrapper", "wrapper_url")
+        if k in ("codec", "output_path", "cookies_path", "use_wrapper", "wrapper_url", "overwrite")
     }
     new_job = manager.start(urls, options)
     new_job.add_line(f"Retry of {job.id} — queued with same {len(urls)} URL(s).")
@@ -1161,6 +1824,10 @@ def main():
     print("  Press Ctrl+C to stop.\n", flush=True)
     # A PyInstaller binary is usually double-clicked with no terminal — open
     # the UI automatically once the server is listening.
+    # Remote access: Settings → Remote access → listen on all interfaces so
+    # the installed PWA works from a phone on the same network (the token
+    # gate protects the API; the browser link stays loopback).
+    bind_host = "0.0.0.0" if config.get("remote_bind") else HOST
     if getattr(sys, "frozen", False):
         try:
             import webbrowser
@@ -1174,9 +1841,9 @@ def main():
         # A generous thread pool keeps the 1.5s job poll / 5s wrapper poll
         # responsive while one or two transcoded audio streams are streaming
         # (each holds a request thread for the whole track).
-        serve(app, host=HOST, port=PORT, threads=16)
+        serve(app, host=bind_host, port=PORT, threads=16)
     except ImportError:
-        app.run(host=HOST, port=PORT, threaded=True)
+        app.run(host=bind_host, port=PORT, threaded=True)
 
 
 if __name__ == "__main__":
