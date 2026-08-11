@@ -221,7 +221,11 @@ def _prepare_mount_dirs() -> list[str]:
         return warnings
     try:
         for line in compose.read_text(encoding="utf-8").splitlines():
+            # Short form: `- ./data:/…`
             m = re.match(r"^\s*-\s*\./([^:]+):", line)
+            if not m:
+                # Long form: `source: ./data` (after `- type: bind`).
+                m = re.match(r"^\s*source:\s*\./([^:]+)\s*$", line)
             if not m:
                 continue
             src = WRAPPER_DIR / m.group(1).strip()
@@ -253,6 +257,18 @@ def wrapper_v2_compose(args: list[str], timeout: int = 180) -> dict:
             cwd=str(WRAPPER_DIR),
             capture_output=True, text=True, timeout=timeout,
         )
+        # A mount/permission failure (root-owned ./data from a sudo run or a
+        # daemon-side mkdir) is worth one automatic repair + retry.
+        if out.returncode != 0 and any(
+            k in (out.stderr or "").lower()
+            for k in ("permission denied", "mount source path")
+        ):
+            _prepare_mount_dirs()
+            out = subprocess.run(
+                [docker, "compose", *args],
+                cwd=str(WRAPPER_DIR),
+                capture_output=True, text=True, timeout=timeout,
+            )
         if out.returncode != 0:
             return {"ok": False, "error": (out.stderr or out.stdout or "docker compose failed").strip()[-400:]}
         return {"ok": True}

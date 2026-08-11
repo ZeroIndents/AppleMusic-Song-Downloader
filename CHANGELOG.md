@@ -11,6 +11,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.3] - 2026-08-11
+
+### Fixed
+- **Auto-retry on mount errors** — if `docker compose up` fails with a
+  mount/permission error (`mkdir …/data: permission denied`), the setup
+  script now repairs the wrapper data folder ownership and retries once
+  before giving up with clear instructions. `wrapper start` / `restart` do
+  the same.
+- **Long-form bind mounts** — the data-folder prep now also understands
+  `- type: bind` / `source: ./data` compose syntax, so it stays correct if
+  upstream wrapper-v2 changes its compose.yaml format.
+- **Verified end-to-end on a fresh install** — a clean clone + fresh
+  upstream wrapper-v2 + `docker compose up` now runs with no platform warning
+  and no mount error (tested on Apple Silicon).
+
 ## [2.1.2] - 2026-08-11
 
 ### Fixed

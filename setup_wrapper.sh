@@ -191,24 +191,53 @@ if ! grep -qE '^[[:space:]]+platform:' compose.yaml 2>/dev/null; then
   ' compose.yaml > compose.yaml.tmp && mv compose.yaml.tmp compose.yaml
 fi
 
+# List the ./-relative bind-mount source dirs from compose.yaml — both the
+# short form (`- ./data:…`) and the long form (`- type: bind` / `source: ./data`).
+mount_sources() {
+  { grep -oE '^[[:space:]]*-[[:space:]]*\./[^:]+' compose.yaml 2>/dev/null
+    grep -oE '^[[:space:]]*source:[[:space:]]*\./[^:]+[[:space:]]*$' compose.yaml 2>/dev/null
+  } | sed -E 's/^[[:space:]]*-?[[:space:]]*(source:[[:space:]]*)?\.\///' | sort -u
+}
+
 # Docker creates a missing bind-mount source dir as root; on Docker Desktop
 # for Mac that can fail with "mkdir …/wrapper-v2/data: permission denied" and
-# the wrapper never starts. Pre-create the sources (from ./path: volumes in
-# compose.yaml) as the current user so no daemon-side mkdir is needed.
+# the wrapper never starts. Pre-create the sources as the current user so no
+# daemon-side mkdir is needed.
 echo "→ Preparing wrapper data folders…"
-if command -v grep >/dev/null 2>&1; then
-  for d in $(grep -oE '^[[:space:]]*-[[:space:]]*\./[^:]+' compose.yaml | sed -E 's/^[[:space:]]*-[[:space:]]*\.\///' | sort -u); do
-    [ -n "$d" ] || continue
-    if ! mkdir -p "$d" 2>/dev/null; then
-      echo "! cannot create $d — try:  sudo chown -R \"$(id -un)\" \"$(pwd)/$d\"  then re-run"
-    else
-      chmod u+rwx "$d" 2>/dev/null || true
-    fi
-  done
-fi
+while read -r d; do
+  [ -n "$d" ] || continue
+  if ! mkdir -p "$d" 2>/dev/null; then
+    echo "! cannot create $d — try:  sudo chown -R \"$(id -un)\" \"$(pwd)/$d\"  then re-run"
+  else
+    chmod u+rwx "$d" 2>/dev/null || true
+  fi
+done < <(mount_sources)
 
 echo "→ Building and starting wrapper (this first build may take a few minutes)…"
-docker compose up --build -d
+if ! docker compose up --build -d 2>compose.err; then
+  if grep -qiE 'permission denied|mount source path' compose.err; then
+    echo "! Start hit a mount/permission error — repairing the data folder and retrying once…"
+    # The mount source (./data) may be root-owned from a sudo run or a
+    # previous daemon-side mkdir; hand it back to the current user, then retry.
+    while read -r d; do
+      [ -n "$d" ] || continue
+      sudo chown -R "$(id -un)" "$d" 2>/dev/null || true
+      chmod u+rwx "$d" 2>/dev/null || true
+    done < <(mount_sources)
+    if ! docker compose up --build -d; then
+      echo "✗ Still failing after the repair. Try manually:" >&2
+      echo "    sudo chown -R \"$(id -un)\" \"$(pwd)/data\"   # or whatever mount dir is failing" >&2
+      echo "    docker compose up --build -d" >&2
+      rm -f compose.err
+      exit 1
+    fi
+  else
+    cat compose.err >&2
+    rm -f compose.err
+    exit 1
+  fi
+fi
+rm -f compose.err
 
 echo
 echo "→ Waiting for the wrapper API…"
