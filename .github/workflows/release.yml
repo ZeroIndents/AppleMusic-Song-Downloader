@@ -98,6 +98,29 @@ jobs:
           PY
           cat SHA256SUMS.txt
 
+      - name: Extract changelog notes
+        id: notes
+        shell: bash
+        run: |
+          # Pull the matching "## [X.Y.Z]" section out of CHANGELOG.md to use
+          # as the GitHub release body. Falls back to a pointer when the
+          # section is missing (e.g. very old tags).
+          ver="${GITHUB_REF_NAME#v}"
+          echo "clean_ver=${ver}" >> "$GITHUB_OUTPUT"
+          awk -v v="$ver" '
+            /^## \[/ {
+              line = $0
+              sub(/^## \[/, "", line)
+              sub(/\].*/, "", line)
+              if (line == v) { insec = 1; next }
+              if (insec) exit
+            }
+            insec { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "See CHANGELOG.md for the notes for this release." > /tmp/release-notes.md
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -109,6 +132,8 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
+          name: Music High Res ${{ steps.notes.outputs.clean_ver }}
+          body_path: /tmp/release-notes.md
           files: |
             dist/MusicHighRes-*
             dist/SHA256SUMS.txt

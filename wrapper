@@ -32,4 +32,14 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/us
 if [ -x .venv/bin/python ]; then
   exec .venv/bin/python wrapperctl.py "$@"
 fi
-exec python3 wrapperctl.py "$@"
+# Windows (Git Bash): the venv keeps its interpreter under Scripts/.
+if [ -x .venv/Scripts/python.exe ]; then
+  exec .venv/Scripts/python.exe wrapperctl.py "$@"
+fi
+for py in python3 python; do
+  if command -v "$py" >/dev/null 2>&1; then
+    exec "$py" wrapperctl.py "$@"
+  fi
+done
+echo "wrapper: no Python interpreter found — set up the app first (setup.sh / setup.ps1)" >&2
+exit 1

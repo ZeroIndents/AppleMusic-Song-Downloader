@@ -6,7 +6,7 @@
  */
 // NOTE: bump this cache name on every release — otherwise installed clients
 // keep serving the previous shell from cache after a deploy.
-const CACHE = "mhr-shell-v2";
+const CACHE = "mhr-shell-v3";
 const PRECACHE = [
   "./",
   "./index.html",

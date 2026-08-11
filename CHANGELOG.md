@@ -11,6 +11,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.1] - 2026-08-11
+
+### Added
+- **`wrapper` command on Windows** — `setup.ps1` / `install.ps1` now install
+  a `wrapper.cmd` shim (requires Git Bash) and add it to your user PATH, so
+  `wrapper status`, `wrapper 2fa …` etc. work from PowerShell, cmd and Git
+  Bash. The wrapper script also finds the venv under `.venv/Scripts/` on
+  Windows.
+- **Auto release notes** — the release workflow now fills each GitHub
+  release's notes from the matching CHANGELOG section, so releases carry the
+  actual changelog instead of just the commit title.
+
+### Fixed
+- **WSL fallback in the setup wizard now preflights** — when Git Bash isn't
+  installed and the wizard falls back to WSL bash, it logs a warning and
+  checks that `docker` + `jq` actually exist *inside* the distro (and Docker
+  Desktop's WSL integration is on) before running the setup script, failing
+  with exact install instructions instead of a cryptic error mid-extract.
+  The same preflight runs for Git Bash / macOS / Linux shells.
+
 ## [2.1.0] - 2026-08-11
 
 ### Added

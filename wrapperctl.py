@@ -603,6 +603,28 @@ def _windows_bash() -> str | None:
     return candidates[0] if candidates else None
 
 
+def _bash_missing_tools(bash: str, timeout: int = 90) -> list[str]:
+    """Tools setup_wrapper.sh needs that the chosen bash can't see.
+
+    Git Bash inherits the Windows PATH, so Docker Desktop's docker.exe and
+    winget's jq.exe are visible. WSL bash does NOT inherit them — docker and
+    jq must be installed *inside the distro* (and Docker Desktop's WSL
+    integration enabled). Probing through the shell itself lets the wizard
+    fail with exact install instructions instead of a cryptic script error.
+    Returns the list of missing tools (empty = all present).
+    """
+    # Non-login `-c`, no rc files: exactly the environment setup_wrapper.sh
+    # will run in, so this can't pass tools that the real run won't see.
+    try:
+        out = subprocess.run(
+            [bash, "-c", "for t in docker jq; do command -v \"$t\" >/dev/null 2>&1 || echo \"$t\"; done"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return [t for t in (out.stdout or "").split() if t]
+    except (OSError, subprocess.SubprocessError):
+        return ["docker", "jq"]  # couldn't probe — assume both missing
+
+
 def _to_shell_path(path: str, bash: str) -> str:
     r"""Convert a Windows path into the POSIX form the chosen bash reads.
 
@@ -800,7 +822,6 @@ class SetupManager:
             #    because a Windows path was handed to a Linux shell.
             self.step = "Cloning wrapper + extracting libraries…"
             bash = _windows_bash() if os.name == "nt" else shutil.which("bash")
-            self._add(f"→ using bash: {bash}")
             if not bash:
                 if os.name == "nt":
                     raise SetupError(
@@ -810,6 +831,32 @@ class SetupManager:
                         "again."
                     )
                 raise SetupError("bash not found — the wrapper setup needs a bash shell.")
+            self._add(f"→ using bash: {bash}")
+            # Preflight: setup_wrapper.sh needs docker + jq visible to THIS
+            # shell. Git Bash inherits the Windows PATH; WSL bash needs them
+            # installed *inside the distro*. Fail early with actionable
+            # instructions instead of a cryptic mid-script error.
+            is_wsl_shim = os.name == "nt" and os.path.dirname(bash).lower().endswith("system32")
+            if is_wsl_shim:
+                self._add("⚠ WSL bash detected — Git Bash is the recommended shell for "
+                          "this setup. docker + jq must exist inside the WSL distro.")
+            missing = _bash_missing_tools(bash)
+            if missing:
+                if is_wsl_shim:
+                    hint = (
+                        "WSL bash can't see the Windows docker/jq. Either install "
+                        "Git for Windows (Git Bash) and re-run Setup, or inside "
+                        "WSL run:  sudo apt install docker.io jq  and enable "
+                        "Docker Desktop → Settings → Resources → WSL integration."
+                    )
+                else:
+                    hint = (
+                        "Install the missing tool(s), then run Setup again "
+                        "(jq: brew install jq · apt install jq · winget install jqlang.jq)."
+                    )
+                raise SetupError(
+                    f"Missing tool(s) for the wrapper setup: {', '.join(missing)}. " + hint
+                )
             env = dict(os.environ)
             if email and password:
                 env["WRAPPER_USERNAME"] = email

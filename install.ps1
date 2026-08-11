@@ -124,6 +124,59 @@ python -m venv .venv
 & (Join-Path $Root ".venv\Scripts\python.exe") -m pip install --quiet -r requirements.txt
 ok "App dependencies installed"
 
+# ── 6b. Install the 'wrapper' command (PowerShell/cmd/Git Bash; needs Git Bash) ─
+# The wrapper script is bash, so the installer writes a tiny wrapper.cmd shim
+# that calls Git Bash on the project's wrapper script (POSIX path baked in),
+# then adds the shim folder to the user PATH.
+say "Installing the 'wrapper' command…"
+$WrapperSrc = Join-Path $Root "wrapper"
+$BashPath = $null
+# Prefer Git Bash explicitly — it ships cygpath (needed to convert paths)
+# and inherits the Windows PATH. `Get-Command bash` alone tends to find
+# WSL's System32 shim first, which breaks the shim (no cygpath, needs
+# /mnt/c paths).
+foreach ($p in @("C:\Program Files\Git\bin\bash.exe", "C:\Program Files (x86)\Git\bin\bash.exe")) {
+    if (Test-Path $p) { $BashPath = $p; break }
+}
+if (-not $BashPath) {
+    $BashCmd = Get-Command bash -ErrorAction SilentlyContinue
+    # Ignore the WSL shim (System32\bash.exe) — wrapper.cmd needs Git Bash.
+    if ($BashCmd -and $BashCmd.Source -notlike "*\System32\*" -and $BashCmd.Source -notlike "*\system32\*") {
+        $BashPath = $BashCmd.Source
+    }
+}
+if (-not (Test-Path $WrapperSrc) -or -not $BashPath) {
+    warn "'wrapper' command skipped — it needs Git for Windows (Git Bash)."
+    warn "Install it from https://git-scm.com, then re-run install.ps1."
+} else {
+    $WrapperDir = Join-Path $HOME ".local\bin"
+    New-Item -ItemType Directory -Force -Path $WrapperDir | Out-Null
+    # Bake the POSIX (Git Bash) form of the project wrapper path into the shim.
+    $Posix = ""
+    try { $Posix = (& $BashPath -c 'cygpath -u "$1"' _ $WrapperSrc 2>$null).Trim() } catch {}
+    if ($Posix -notlike "/*") {
+        warn "'wrapper' command skipped — Git Bash couldn't convert the project path."
+        warn "Install Git for Windows from https://git-scm.com and re-run install.ps1."
+    } else {
+        $Shim = Join-Path $WrapperDir "wrapper.cmd"
+        @(
+            "@echo off",
+            "rem Music High Res - 'wrapper' command shim (installed by setup.ps1 / install.ps1)",
+            "rem Requires Git Bash. Points at the project's wrapper script - re-run setup if the project moves.",
+            "`"$BashPath`" `"$Posix`" %*",
+            "exit /b %errorlevel%"
+        ) | Set-Content -Path $Shim -Encoding ASCII
+        # Add to the user PATH so new terminals get `wrapper`.
+        $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ($null -eq $UserPath) { $UserPath = "" }
+        if ($UserPath -notlike "*$WrapperDir*") {
+            [Environment]::SetEnvironmentVariable("Path", "$UserPath;$WrapperDir", "User")
+            ok "added $WrapperDir to your user PATH (new terminals get the 'wrapper' command)"
+        }
+        ok "installed wrapper.cmd → $Shim (try in a new terminal:  wrapper status)"
+    }
+}
+
 # ── 7. Docker check (needed later only for ALAC / Atmos) ───────────────
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     ok "Docker is installed — you can set up the ALAC wrapper whenever you want"

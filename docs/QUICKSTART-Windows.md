@@ -1,4 +1,4 @@
-# Music High Res 2.1.0 — Windows quick start
+# Music High Res 2.1.1 — Windows quick start
 
 Download lossless **ALAC (up to 24-bit/192kHz)**, **AAC 256kbps**, or **Dolby
 Atmos** music from Apple Music — plus **Spotify** and **YouTube Music** —
@@ -40,9 +40,10 @@ Export cookies from `music.apple.com` ("Get cookies.txt LOCALLY" extension)
    automatically.
 4. In the app: Settings → enable **Use wrapper** → pick **ALAC** or **Atmos**.
 
-In **Git Bash**, the **`wrapper`** command works too (`./wrapper status`,
-`./wrapper 2fa 123456`) for checking the login state and submitting your
-Apple code.
+The **`wrapper`** command is installed by `setup.bat` — a `wrapper.cmd` shim
+added to your PATH — so `wrapper status`, `wrapper 2fa 123456`,
+`wrapper start | stop | logs` all work from PowerShell, cmd and Git Bash
+(needs **Git for Windows**). Or run `./wrapper` from the project folder.
 
 ## 5. Download
 
