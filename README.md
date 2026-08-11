@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/License-Personal%20%2F%20Non--commercial-ff5b8a?style=flat-square" alt="License">
   <img src="https://img.shields.io/github/v/release/ZeroIndents/AppleMusic-Song-Downloader?style=flat-square" alt="Release">
-  <img src="https://img.shields.io/badge/v2.1.3-Release-ff5b8a?style=flat-square" alt="v2.1.3">
+  <img src="https://img.shields.io/badge/v2.1.4-Release-ff5b8a?style=flat-square" alt="v2.1.4">
 </p>
 
 <p align="center">
@@ -319,6 +319,7 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 | `wrapper: command not found` | Run `./setup.sh` once (installs the `wrapper` command) or use `./wrapper` from the project folder. If it's a fresh shell, open a new terminal (PATH was added to your shell rc) |
 | Docker "platform mismatch" warning on Apple Silicon | Harmless — the image is amd64 and runs under Rosetta. It's auto-pinned at setup **and** on every `wrapper start`/`wrapper restart` (and by `start.sh`); to re-pin manually run `wrapper prepare` |
 | `mkdir …/wrapper-v2/data: permission denied` when starting the wrapper on macOS | Fixed in 2.1.2/2.1.3 — the data folder is pre-created before `docker compose up`, and 2.1.3+ **auto-repairs and retries once** if a mount error still occurs. If it persists (e.g. an old root-owned folder from a sudo run): `sudo chown -R "$USER" wrapper-v2` then `wrapper start` |
+| App won't launch after closing it + Docker, "Address already in use" in `logs/app.log` | Fixed in 2.1.4 — a stale server can hold port 8741 without responding. The launcher now probes with a generous timeout and clears a stale Music High Res server on the port before starting; `app.py` also retries the bind and prints a clear message. To recover manually: `kill $(lsof -ti tcp:8741)` then relaunch |
 | Windows: setup shows "✓ Docker ✓ APK" then fails with `bash: … No such file or directory` | Fixed in 2.1.0 — the wizard now prefers Git Bash and converts Windows paths automatically. If you still hit it, install **Git for Windows** (git-scm.com) and re-run Setup; don't rely on WSL (needs its own docker/jq) |
 | Downloads slow after reboot | Docker Desktop needs ~1 min to boot the first time; the start script waits for it |
 | Windows: wrapper setup says bash not found | Install **Git for Windows** (ships Git Bash) — the wizard auto-detects it — then run the setup wizard again. (WSL also works but needs its own docker/jq inside the distro) |

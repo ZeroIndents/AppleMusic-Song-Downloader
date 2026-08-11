@@ -11,6 +11,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.4] - 2026-08-11
+
+### Fixed
+- **App wouldn't launch after closing it + Docker** — a stale Music High Res
+  server could keep port 8741 occupied without answering the health probe
+  (e.g. one auto-started at login by a LaunchAgent, or a leftover after a
+  crash). The launcher then started a second `app.py` that died with
+  `Address already in use`. The launcher now probes with a generous timeout
+  and clears a stale server on the port (only ever kills Music High Res
+  processes, never unrelated ones) before starting fresh, and `app.py`
+  retries the bind and prints a clear message instead of a raw traceback.
+- **Removed rogue auto-start LaunchAgents** on this machine
+  (`com.mhr.app` / `com.musichighres.docker`) that started `app.py` at login
+  outside `start.sh`'s control — the root cause of the stuck port. The app
+  now starts only through `start.sh` / the `.app` / `.command`, so closing
+  the app always frees the port.
+
 ## [2.1.3] - 2026-08-11
 
 ### Fixed

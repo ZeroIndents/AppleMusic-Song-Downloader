@@ -170,11 +170,39 @@ elif [ -d wrapper-v2 ]; then
 fi
 
 # ── 5. App server (reuse if already running) ──────────────────────────
+# mhr_on_port — PID of whatever is LISTENING on the app port (or empty).
+# A stale server (e.g. one auto-started by a LaunchAgent outside start.sh,
+# or a leftover after a hard crash) can hold the port without answering the
+# health probe — then a fresh app.py dies with "Address already in use".
+# We only ever kill OUR OWN server (command line matches app.py), never an
+# unrelated process that happens to use the port.
+mhr_on_port() {
+  lsof -nP -iTCP:8741 -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
 say "Starting the Music High Res app…"
 SERVER_PID=""
-if curl -s -m 2 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
+# The health probe needs a generous timeout: /api/status calls the wrapper
+# and `docker info` under the hood, so even a healthy server can take ~4s to
+# answer (longer when Docker was just closed).
+if curl -s -m 8 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
   ok "App server already running"
 else
+  STALE=$(mhr_on_port)
+  if [ -n "$STALE" ]; then
+    if ps -p "$STALE" -o command= 2>/dev/null | grep -qE 'app\.py|Music-High-Res|MusicHighRes'; then
+      warn "A stale Music High Res server (PID $STALE) is holding the port but not responding — clearing it…"
+      kill "$STALE" 2>/dev/null
+      sleep 2
+      # If it ignored SIGTERM (e.g. hung in the wrapper HTTP call), force it.
+      if [ -n "$(mhr_on_port)" ] && ps -p "$STALE" >/dev/null 2>&1; then
+        kill -9 "$STALE" 2>/dev/null
+        sleep 1
+      fi
+    else
+      warn "Port 8741 is held by an unrelated process (PID $STALE) — the app may fail to bind."
+    fi
+  fi
   .venv/bin/python app.py &
   SERVER_PID=$!
 fi
@@ -204,7 +232,7 @@ cleanup() {
   # app open (it would still need the wrapper). This covers the reuse case
   # and double-launched sessions uniformly.
   if [ "$WRAPPER_STARTED" = "1" ] && [ -d wrapper-v2 ] && command -v docker >/dev/null 2>&1 \
-     && ! curl -s -m 2 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
+     && ! curl -s -m 8 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
     say "Closing the app — stopping the ALAC wrapper (Docker Desktop stays running)…"
     # Bounded stop: `-t 3` limits the container's grace period to 3s, and the
     # CLI is capped at 8s so a wedged Docker daemon can never hang the close.

@@ -109,9 +109,9 @@ from downloader import (
 
 PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
-# Keep in lockstep with the CHANGELOG heading (e.g. "[2.1.3] - 2026-08-11")
+# Keep in lockstep with the CHANGELOG heading (e.g. "[2.1.4] - 2026-08-11")
 # when cutting the next release.
-VERSION = "2.1.3"
+VERSION = "2.1.4"
 
 # GitHub repo used by the in-app self-updater (/api/update/*).
 GITHUB_REPO = "ZeroIndents/AppleMusic-Song-Downloader"
@@ -2486,6 +2486,45 @@ def _run_update(tarball_url: str, tag: str) -> None:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _serve_with_retry(serve_fn) -> None:
+    """Bind the HTTP server, tolerating a briefly-occupied port.
+
+    A stale Music High Res server (e.g. one auto-started by a LaunchAgent
+    outside start.sh, or a leftover after a hard crash) can hold the port
+    without answering the health probe. start.sh clears such squatters before
+    starting us, but a race (the old process hasn't released the socket yet)
+    can still hit "Address already in use". Retry a few times, then give up
+    with a clear message instead of a raw traceback.
+    """
+    import time as _t
+
+    for _attempt in range(5):
+        try:
+            serve_fn()
+            return
+        except OSError as e:
+            if getattr(e, "errno", None) not in (48, 98):  # EADDRINUSE (macOS/Linux)
+                raise
+            if _attempt == 4:
+                import shutil as _sh
+
+                hint = ""
+                if _sh.which("lsof"):
+                    # Guard against an empty pid list (e.g. a TIME_WAIT socket
+                    # holds the port but nothing is LISTENing).
+                    pids = _sh.os.popen(f"lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null").read().strip()
+                    if pids:
+                        hint = f"Close it, or run:  kill {pids}  then relaunch."
+                print(
+                    f"\n  ✗ Port {PORT} is already in use by another process.\n"
+                    "    A previous Music High Res server may still be running.\n"
+                    f"    {hint or f'Free the port (lsof -iTCP:{PORT}) and relaunch.'}\n",
+                    flush=True,
+                )
+                raise SystemExit(1)
+            _t.sleep(2)
+
+
 def main():
     setup_logging()
     log = logging.getLogger("app")
@@ -2516,9 +2555,9 @@ def main():
         # A generous thread pool keeps the 1.5s job poll / 5s wrapper poll
         # responsive while one or two transcoded audio streams are streaming
         # (each holds a request thread for the whole track).
-        serve(app, host=bind_host, port=PORT, threads=16)
+        _serve_with_retry(lambda: serve(app, host=bind_host, port=PORT, threads=16))
     except ImportError:
-        app.run(host=bind_host, port=PORT, threaded=True)
+        _serve_with_retry(lambda: app.run(host=bind_host, port=PORT, threaded=True))
 
 
 if __name__ == "__main__":
