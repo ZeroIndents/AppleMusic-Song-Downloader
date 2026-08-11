@@ -11,6 +11,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.5] - 2026-08-11
+
+### Changed
+- **Re-clicking the launcher now always starts a fresh session** — if the app
+  is running in the background (window closed, server still up), launching
+  it again kills the old server and boots a brand-new one, so the window
+  actually pops up. A fresh-session marker makes sure the old session leaves
+  the ALAC wrapper running for the new one instead of tearing it down.
+  Applies to `start.sh`, the `.app` bundle, the `.command` file, and the
+  Windows `start.ps1` launcher.
+
 ## [2.1.4] - 2026-08-11
 
 ### Fixed

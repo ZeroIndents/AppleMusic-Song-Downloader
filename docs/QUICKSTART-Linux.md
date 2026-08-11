@@ -1,4 +1,4 @@
-# Music High Res 2.1.4 — Linux quick start
+# Music High Res 2.1.5 — Linux quick start
 
 Download lossless **ALAC (up to 24-bit/192kHz)**, **AAC 256kbps**, or **Dolby
 Atmos** music from Apple Music — plus **Spotify** and **YouTube Music** —

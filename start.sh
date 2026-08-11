@@ -16,7 +16,8 @@
 #    3. Starts Docker Desktop (macOS) if it isn't running
 #    4. Starts the ALAC wrapper (wrapper-v2) when present — and stops it
 #       again when you close the app (Docker Desktop itself stays running)
-#    5. Starts the app server (or reuses one that's already running)
+#    5. Starts a FRESH app server session (any background session from a
+#       previous launch is killed first, so the window always pops up)
 #    6. Opens the browser at http://127.0.0.1:8741
 #
 #  Everything it prints is also written to logs/launcher.log.
@@ -57,6 +58,41 @@ exec > >(tee -a "$LOG_DIR/launcher.log") 2>&1
 echo
 echo "━━━ Music High Res ━━━"
 echo
+
+# ── 0. Fresh session on every launch ──────────────────────────────────
+# Re-clicking the launcher while the app is already running in the
+# background (window closed, server still up) must start a brand-new
+# session: kill the previous server first so a fresh one binds the port and
+# the window actually pops up. Only our OWN server is ever killed — the
+# process command line must match the app — never an unrelated process that
+# happens to use port 8741.
+#
+# A fresh-session marker tells any OTHER launcher session (whose server we're
+# about to kill) not to stop the ALAC wrapper while we boot a fresh one —
+# stopping it would tear down the wrapper we're just starting. Each session
+# writes its own PID and removes only its own marker (cleanup() below).
+mhr_on_port() {
+  lsof -nP -iTCP:8741 -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
+FRESH_FILE="$LOG_DIR/.fresh-session"
+echo "$$" > "$FRESH_FILE"
+
+OLD_SERVER=$(mhr_on_port)
+if [ -n "$OLD_SERVER" ]; then
+  if ps -p "$OLD_SERVER" -o command= 2>/dev/null | grep -qE 'app\.py|Music-High-Res|MusicHighRes'; then
+    say "A previous session is running (PID $OLD_SERVER) — restarting it fresh…"
+    kill "$OLD_SERVER" 2>/dev/null
+    sleep 2
+    # If it ignored SIGTERM (e.g. hung in the wrapper HTTP call), force it.
+    if [ -n "$(mhr_on_port)" ] && ps -p "$OLD_SERVER" >/dev/null 2>&1; then
+      kill -9 "$OLD_SERVER" 2>/dev/null
+      sleep 1
+    fi
+  else
+    warn "Port 8741 is held by an unrelated process (PID $OLD_SERVER) — the app may fail to bind."
+  fi
+fi
 
 # ── 1. Python + first-run setup ───────────────────────────────────────
 if ! command -v python3 >/dev/null 2>&1; then
@@ -169,43 +205,17 @@ elif [ -d wrapper-v2 ]; then
   warn "Wrapper present but Docker isn't ready — skipping. Lossless ALAC / Atmos will be unavailable until it's up."
 fi
 
-# ── 5. App server (reuse if already running) ──────────────────────────
-# mhr_on_port — PID of whatever is LISTENING on the app port (or empty).
-# A stale server (e.g. one auto-started by a LaunchAgent outside start.sh,
-# or a leftover after a hard crash) can hold the port without answering the
-# health probe — then a fresh app.py dies with "Address already in use".
-# We only ever kill OUR OWN server (command line matches app.py), never an
-# unrelated process that happens to use the port.
-mhr_on_port() {
-  lsof -nP -iTCP:8741 -sTCP:LISTEN -t 2>/dev/null | head -1
-}
-
+# ── 5. App server (always a fresh session) ────────────────────────────
+# The section-0 fresh-session block already cleared any previous server, so
+# the port is free (or held by an unrelated process, which we can't touch).
 say "Starting the Music High Res app…"
 SERVER_PID=""
-# The health probe needs a generous timeout: /api/status calls the wrapper
-# and `docker info` under the hood, so even a healthy server can take ~4s to
-# answer (longer when Docker was just closed).
-if curl -s -m 8 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
-  ok "App server already running"
-else
-  STALE=$(mhr_on_port)
-  if [ -n "$STALE" ]; then
-    if ps -p "$STALE" -o command= 2>/dev/null | grep -qE 'app\.py|Music-High-Res|MusicHighRes'; then
-      warn "A stale Music High Res server (PID $STALE) is holding the port but not responding — clearing it…"
-      kill "$STALE" 2>/dev/null
-      sleep 2
-      # If it ignored SIGTERM (e.g. hung in the wrapper HTTP call), force it.
-      if [ -n "$(mhr_on_port)" ] && ps -p "$STALE" >/dev/null 2>&1; then
-        kill -9 "$STALE" 2>/dev/null
-        sleep 1
-      fi
-    else
-      warn "Port 8741 is held by an unrelated process (PID $STALE) — the app may fail to bind."
-    fi
-  fi
-  .venv/bin/python app.py &
-  SERVER_PID=$!
+HOLDER=$(mhr_on_port)
+if [ -n "$HOLDER" ] && ! ps -p "$HOLDER" -o command= 2>/dev/null | grep -qE 'app\.py|Music-High-Res|MusicHighRes'; then
+  warn "Port 8741 is held by an unrelated process (PID $HOLDER) — the app may fail to bind."
 fi
+.venv/bin/python app.py &
+SERVER_PID=$!
 
 # open_url — macOS uses `open`, Linux uses xdg-open. Never fails loudly.
 open_url() {
@@ -227,6 +237,19 @@ cleanup() {
   if [ -n "${SERVER_PID:-}" ]; then
     kill "$SERVER_PID" 2>/dev/null
     sleep 1   # let our server free port 8741 before probing below
+  fi
+  # Drop our own fresh-session marker (if any). If a DIFFERENT session's
+  # marker is present, it means a fresh launch is booting right now (it
+  # killed our server and wrote the marker before we got here) — let IT own
+  # the wrapper lifecycle, so don't stop the wrapper (that would tear down
+  # the one it's about to start).
+  if [ -n "${FRESH_FILE:-}" ] && [ -f "$FRESH_FILE" ]; then
+    if [ "$(cat "$FRESH_FILE" 2>/dev/null)" = "$$" ]; then
+      rm -f "$FRESH_FILE"
+    else
+      say "A new session is starting — leaving the ALAC wrapper running for it."
+      return
+    fi
   fi
   # Stop the wrapper only if no OTHER launcher session is still holding the
   # app open (it would still need the wrapper). This covers the reuse case
@@ -255,6 +278,9 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
+# The fresh session is up — drop the marker so future closes manage the
+# wrapper normally.
+rm -f "${FRESH_FILE:-}"
 
 if [ "$NO_BROWSER" = "1" ]; then
   say "Skipping browser (--no-browser). UI is at http://127.0.0.1:8741"

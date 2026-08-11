@@ -109,9 +109,9 @@ from downloader import (
 
 PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
-# Keep in lockstep with the CHANGELOG heading (e.g. "[2.1.4] - 2026-08-11")
+# Keep in lockstep with the CHANGELOG heading (e.g. "[2.1.5] - 2026-08-11")
 # when cutting the next release.
-VERSION = "2.1.4"
+VERSION = "2.1.5"
 
 # GitHub repo used by the in-app self-updater (/api/update/*).
 GITHUB_REPO = "ZeroIndents/AppleMusic-Song-Downloader"

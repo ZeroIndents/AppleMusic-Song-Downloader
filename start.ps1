@@ -42,6 +42,20 @@ function global:Stop-Cleanup {
     # 1. Kill the server we started (never a reused one) so app.py doesn't
     #    stay orphaned on port 8741.
     if ($global:ServerPid) { Stop-Process -Id $global:ServerPid -ErrorAction SilentlyContinue }
+    # 1b. Drop our own fresh-session marker. If a DIFFERENT session's marker
+    #     is present, a fresh launch is booting right now (it killed our
+    #     server and wrote the marker) — let IT own the wrapper lifecycle, so
+    #     don't stop the wrapper.
+    $Marker = Join-Path $PSScriptRoot "logs\.fresh-session"
+    if (Test-Path $Marker) {
+        $MarkerPid = (Get-Content $Marker -Raw -ErrorAction SilentlyContinue).Trim()
+        if ($MarkerPid -eq "$PID") {
+            Remove-Item $Marker -Force -ErrorAction SilentlyContinue
+        } else {
+            say "A new session is starting — leaving the ALAC wrapper running for it."
+            return
+        }
+    }
     # 2. Stop the ALAC wrapper — it only runs while the app is open.
     #    Docker Desktop itself is left running. Bounded stop (15s cap) so a
     #    wedged Docker daemon can't hang the close.
@@ -97,6 +111,34 @@ if (-not (Test-VenvOk)) {
         fail "Setup failed — see the messages above."
         Stop-Transcript | Out-Null
         exit 1
+    }
+}
+
+# ── 0. Fresh session on every launch ─────────────────────────────────
+# Re-clicking the launcher while the app is already running in the
+# background (window closed, server still up) must start a brand-new
+# session: kill the previous server first so a fresh one binds the port and
+# the window actually pops up. Only our OWN server is ever killed — the
+# process command line must mention app.py — never an unrelated process.
+function Get-MhrPortPid {
+    try {
+        $Conn = Get-NetTCPConnection -LocalPort 8741 -State Listen -ErrorAction Stop | Select-Object -First 1
+        if ($Conn) { return $Conn.OwningProcess } else { return $null }
+    } catch { return $null }
+}
+# A fresh-session marker tells any OTHER launcher session (whose server we're
+# about to kill) not to stop the ALAC wrapper while we boot a fresh one.
+$FreshFile = Join-Path $PSScriptRoot "logs\.fresh-session"
+Set-Content -Path $FreshFile -Value $PID -NoNewline -ErrorAction SilentlyContinue
+$OldServer = Get-MhrPortPid
+if ($OldServer) {
+    $OldCmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$OldServer" -ErrorAction SilentlyContinue).CommandLine
+    if ($OldCmd -match "app\.py") {
+        say "A previous session is running (PID $OldServer) — restarting it fresh…"
+        Stop-Process -Id $OldServer -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    } else {
+        warn "Port 8741 is held by an unrelated process (PID $OldServer) — the app may fail to bind."
     }
 }
 
@@ -186,18 +228,14 @@ if (-not $Min -and (Test-Path (Join-Path $PSScriptRoot "wrapper-v2")) -and (Test
     warn "Wrapper present but Docker isn't ready — skipping. Lossless ALAC / Atmos will be unavailable until it's up."
 }
 
-# ── 5. App server (reuse if already running) ──────────────────────────
+# ── 5. App server (always a fresh session) ────────────────────────────
+# The section-0 fresh-session block already cleared any previous server, so
+# the port is free (or held by an unrelated process, which we can't touch).
 say "Starting the Music High Res app…"
-$ServerPid = $null
-try {
-    $null = Invoke-WebRequest -Uri "http://127.0.0.1:8741/api/status" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-    ok "App server already running"
-} catch {
-    $AppPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-    $Proc = Start-Process -FilePath $AppPy -ArgumentList "app.py" -WorkingDirectory $PSScriptRoot -PassThru -WindowStyle Hidden
-    $global:ServerPid = $Proc.Id
-    $global:AppStarted = $true
-}
+$AppPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$Proc = Start-Process -FilePath $AppPy -ArgumentList "app.py" -WorkingDirectory $PSScriptRoot -PassThru -WindowStyle Hidden
+$global:ServerPid = $Proc.Id
+$global:AppStarted = $true
 
 # Wait for the server before opening the browser.
 for ($i = 0; $i -lt 30; $i++) {
@@ -206,6 +244,9 @@ for ($i = 0; $i -lt 30; $i++) {
         break
     } catch { Start-Sleep -Seconds 1 }
 }
+# The fresh session is up — drop the marker so future closes manage the
+# wrapper normally.
+Remove-Item $Marker -Force -ErrorAction SilentlyContinue
 
 if ($NoBrowser) {
     say "Skipping browser (-NoBrowser). UI is at http://127.0.0.1:8741"
