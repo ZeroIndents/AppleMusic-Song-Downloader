@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/License-Personal%20%2F%20Non--commercial-ff5b8a?style=flat-square" alt="License">
   <img src="https://img.shields.io/github/v/release/ZeroIndents/AppleMusic-Song-Downloader?style=flat-square" alt="Release">
-  <img src="https://img.shields.io/badge/v2.0.0-Release-ff5b8a?style=flat-square" alt="v2.0.0">
+  <img src="https://img.shields.io/badge/v2.1.0-Release-ff5b8a?style=flat-square" alt="v2.1.0">
 </p>
 
 <p align="center">
@@ -183,6 +183,22 @@ AAC 256 kbps works with just cookies. **ALAC lossless** and **Atmos** require `w
    ```
    The session is cached on disk — **future restarts never ask again**.
 
+> **💻 Terminal? Use the `wrapper` command.** After setup, control the wrapper
+> from any terminal — no app needed:
+>
+> ```bash
+> wrapper status            # login state (awaiting_2fa / authenticated / …)
+> wrapper 2fa 123456        # submit the 6-digit Apple code
+> wrapper start | stop      # start / stop the container (Docker stays running)
+> wrapper restart           # fresh login → new code
+> wrapper logs              # tail the wrapper container log
+> wrapper docker | setup    # health check / install instructions
+> ```
+>
+> `setup.sh` / `install.sh` symlink it to `~/.local/bin/wrapper` (start.sh
+> puts that on PATH), or run it as `./wrapper` from this folder. It works with
+> both engines — it follows Settings → Apple engine (gamdl wrapper-v2 or amdl).
+
 > **No Terminal? Use the in-app wizard instead.** Open the app → **"5 · Wrapper & login"** → **⚙ Setup the wrapper**. It runs the same steps (you give it the APK as a file path or URL, optionally your Apple ID), streams the build log right into the page, applies the Intel-Mac library fix when needed, and lets you log in — including pasting the 2FA code — entirely from the browser. The code box auto-focuses, auto-submits on 6 digits, and the "resend" button cools down to avoid Apple's rate limits.
 
 5. In the app's Settings, enable **"Use wrapper"** and pick **ALAC** or **Atmos**.
@@ -299,8 +315,11 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 | A download failed partway | Hit **↻ Retry** on the job card — it re-queues the same URLs |
 | amdl panel says "port conflict" | `wrapper-v2` is still running — hit **Start** on the amdl panel (it stops wrapper-v2 first) or `cd wrapper-v2 && docker compose down` |
 | amdl downloads fail / wrong quality | Check Settings → amdl **Atmos cap** / **ALAC max**; amdl needs the wrapper running (`state: running`) |
+| `wrapper: command not found` | Run `./setup.sh` once (installs the `wrapper` command) or use `./wrapper` from the project folder. If it's a fresh shell, open a new terminal (PATH was added to your shell rc) |
+| Docker "platform mismatch" warning on Apple Silicon | Harmless — the image is amd64 and runs under Rosetta. It's auto-pinned by setup; to re-pin an existing install run `wrapper restart` once |
+| Windows: setup shows "✓ Docker ✓ APK" then fails with `bash: … No such file or directory` | Fixed in 2.1.0 — the wizard now prefers Git Bash and converts Windows paths automatically. If you still hit it, install **Git for Windows** (git-scm.com) and re-run Setup; don't rely on WSL (needs its own docker/jq) |
 | Downloads slow after reboot | Docker Desktop needs ~1 min to boot the first time; the start script waits for it |
-| Windows: wrapper setup says bash not found | Install **Git for Windows** (ships Git Bash) or enable WSL, then run the setup wizard again — `setup_wrapper.sh` is a bash script |
+| Windows: wrapper setup says bash not found | Install **Git for Windows** (ships Git Bash) — the wizard auto-detects it — then run the setup wizard again. (WSL also works but needs its own docker/jq inside the distro) |
 | Windows: app won't start, "python not found" | Install Python 3.10+ from python.org (check *Add to PATH*) or `winget install Python.Python.3.12` |
 | Something broke and you need to know why | Logs live in `logs/` — `logs/app.log` (server, rotates at 1 MB × 3) and `logs/launcher.log` (startup). See `docs/DOCUMENTATION.md §7` |
 

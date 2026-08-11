@@ -110,6 +110,26 @@ python3 -m venv .venv
 chmod +x start.sh "Start Music High Res.command" 2>/dev/null || true
 ok "App dependencies installed"
 
+# ── 6b. Install the 'wrapper' command (PATH symlink + shell rc) ────────
+say "Installing the 'wrapper' command…"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$PWD/wrapper" "$HOME/.local/bin/wrapper"
+case "$(basename "${SHELL:-}")" in
+  zsh)  RC="$HOME/.zshrc" ;;
+  bash) RC="$HOME/.bashrc" ;;
+  *)    RC="" ;;
+esac
+if [ -n "$RC" ] && ! grep -q 'HOME/.local/bin' "$RC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Music High Res: expose the 'wrapper' command on PATH"
+    echo 'export PATH="$HOME/.local/bin:$PATH"'
+  } >> "$RC"
+  say "  added ~/.local/bin to your PATH in $RC (new terminals get the 'wrapper' command)"
+else
+  say "  symlinked to ~/.local/bin/wrapper (start.sh already adds it to PATH)"
+fi
+
 # ── 7. Docker check (needed later only for ALAC / Atmos) ───────────────
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   ok "Docker is running — you can set up the ALAC wrapper whenever you want"
@@ -143,5 +163,7 @@ To start using it:
        ./setup_wrapper.sh /path/to/apple-music.apk
      then enable "Use wrapper" in the app's Settings.
 
-Remember: macOS only for now — Linux support is coming soon.
+Remember: this installer is for macOS — on Linux run the same one-command
+installer from the same repo:
+    curl -fsSL https://raw.githubusercontent.com/ZeroIndents/AppleMusic-Song-Downloader/main/install_linux.sh | bash
 EOF

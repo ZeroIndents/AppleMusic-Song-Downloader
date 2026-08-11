@@ -3,9 +3,38 @@
 All notable changes to **Music High Res (AppleMusic Song Downloader)** are
 documented in this file.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and versions loosely follow [Semantic Versioning](https://semver.org/).
-- **[Unreleased]** — changes in the working tree not yet released.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## Version scheme
+
+`X.Y.Z` — **X** bumps on a new update (feature release), **Y** on a major fix,
+**Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
+scheme landed.)
+
+## [2.1.0] - 2026-08-11
+
+### Added
+- **`wrapper` command** — control the Apple Music wrapper from any terminal:
+  `wrapper status | start | stop | restart | 2fa <code> | logs | docker | setup`.
+  Engine-aware (follows Settings → Apple engine: wrapper-v2 for gamdl, or
+  amdl). Installed by `setup.sh` / `install.sh` as `~/.local/bin/wrapper`
+  (PATH line added to your shell rc), or run as `./wrapper` from the project
+  folder. No app needed to check the login state or submit the 2FA code.
+
+### Fixed
+- **`wrapper: command not found`** — the wrapper helper is now a real command
+  (see above) instead of only being reachable through the web UI.
+- **Docker platform-mismatch warning on Apple Silicon** — wrapper-v2's image
+  is linux/amd64 only; the compose service is now pinned to
+  `platform: linux/amd64` at setup (and self-healed by `wrapper restart` on
+  existing installs), and the amdl containers pass `--platform linux/amd64`.
+  The warning is gone; Rosetta emulation is now explicit.
+- **Windows: wrapper setup failed right after the "✓ Docker" / "✓ APK"
+  checks** — the wizard picked WSL's `bash.exe` instead of Git Bash and passed
+  Windows paths (`C:\…`) to a Linux shell, so `setup_wrapper.sh` died with
+  `/bin/bash: …: No such file or directory`. The wizard now prefers Git Bash,
+  converts the script + APK paths with `cygpath` / `wslpath`, and
+  `setup_wrapper.sh` accepts Windows-style APK paths directly (CLI too).
 
 ## [2.0.0] - 2026-08-10
 

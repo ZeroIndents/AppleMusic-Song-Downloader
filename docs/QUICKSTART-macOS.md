@@ -1,4 +1,4 @@
-# Music High Res 2.0.0 — macOS quick start
+# Music High Res 2.1.0 — macOS quick start
 
 Download lossless **ALAC (up to 24-bit/192kHz)**, **AAC 256kbps**, or **Dolby
 Atmos** music from Apple Music — plus **Spotify** and **YouTube Music** —
@@ -43,6 +43,11 @@ Export cookies from `music.apple.com` ("Get cookies.txt LOCALLY" extension)
 2. `./setup_wrapper.sh /path/to/apple-music.apk` (an Apple Music **Android**
    APK, 3.6.0-beta build 1109+).
 3. In the app: Settings → enable **Use wrapper** → pick **ALAC** or **Atmos**.
+
+**Control it from the terminal** — the `wrapper` command is installed by
+setup (`~/.local/bin/wrapper`): `wrapper status` shows the login state,
+`wrapper 2fa 123456` submits your Apple code, `wrapper start`/`stop`
+start/stop the container (Docker Desktop stays running).
 
 Or use the in-app wizard: **5 · Wrapper & login** → **⚙ Setup the wrapper**
 (no Terminal needed — it even accepts the APK as a URL).

@@ -1,0 +1,35 @@
+#!/bin/bash
+# wrapper — Music High Res command-line control for the Apple Music decryption
+# wrapper (wrapper-v2 for gamdl, or the amdl wrapper). Works from any folder;
+# setup.sh / install.sh symlink this into ~/.local/bin so you can just type
+# `wrapper`. Usage:
+#
+#   wrapper status            wrapper + login state
+#   wrapper start             start the wrapper container
+#   wrapper stop              stop it (Docker Desktop stays running)
+#   wrapper restart           fresh login (new 2FA code)
+#   wrapper 2fa 123456        submit the 6-digit Apple code
+#   wrapper logs [40]         tail the wrapper container log
+#   wrapper docker            is Docker up?
+#   wrapper setup             how to install the wrapper (needs an APK)
+#
+# Run it as `./wrapper` from the project folder, or plain `wrapper` once the
+# symlink is installed (start.sh adds ~/.local/bin to PATH automatically).
+# Resolve the symlink first: when invoked as `wrapper` (installed link), $0
+# points at ~/.local/bin/wrapper and wrapperctl.py lives in the real project
+# dir, not there. readlink alone is portable (macOS ships it); the installers
+# always link to an absolute path.
+SELF="$0"
+if [ -L "$SELF" ]; then
+  TARGET="$(readlink "$SELF" 2>/dev/null)"
+  [ -n "$TARGET" ] && SELF="$TARGET"
+fi
+cd "$(dirname "$SELF")"
+
+# Homebrew / user bin dirs aren't on the default PATH in every shell context.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
+if [ -x .venv/bin/python ]; then
+  exec .venv/bin/python wrapperctl.py "$@"
+fi
+exec python3 wrapperctl.py "$@"

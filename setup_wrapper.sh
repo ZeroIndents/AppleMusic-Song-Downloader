@@ -37,6 +37,28 @@ if [ -z "$APK" ]; then
   echo "  (You must supply your own Apple Music for Android APK.)"
   exit 1
 fi
+
+# On Windows (Git Bash / WSL) a Windows-style path (C:\…\) can't be read by
+# bash directly — convert it to the shell's POSIX form so the checks below
+# and the library extraction see a real file. Git Bash ships cygpath; WSL
+# ships wslpath; the last branch is a manual Git-Bash-style rewrite.
+case "$APK" in
+  [A-Za-z]:\\*|[A-Za-z]:/*)
+    if command -v cygpath >/dev/null 2>&1; then
+      APK="$(cygpath -u -- "$APK")"
+      echo "→ APK path converted for Git Bash: $APK"
+    elif command -v wslpath >/dev/null 2>&1; then
+      APK="$(wslpath -u -- "$APK")"
+      echo "→ APK path converted for WSL: $APK"
+    else
+      drive="$(printf '%s' "$APK" | cut -c1 | tr 'A-Z' 'a-z')"
+      rest="$(printf '%s' "$APK" | cut -c3- | tr '\\' '/')"
+      APK="/$drive$rest"
+      echo "→ APK path rewritten for bash: $APK"
+    fi
+    ;;
+esac
+
 if [ ! -f "$APK" ]; then
   echo "✗ APK not found: $APK"
   exit 1
@@ -146,6 +168,16 @@ if grep -qE '^[[:space:]]*restart:' compose.yaml 2>/dev/null; then
 else
   echo "! compose.yaml has no restart policy — add 'restart: \"no\"' to the wrapper service"
   echo "  if you don't want it to auto-start with Docker."
+fi
+
+# The image is linux/amd64 only (built with BUILD_PLATFORM=linux/amd64). On
+# Apple Silicon Docker emulates it via Rosetta but prints a platform-mismatch
+# warning on every `compose up`. A service-level `platform:` pin silences it.
+# (awk, not sed, because inserting a line portably across BSD/GNU is painful.)
+echo "→ Pinning platform to linux/amd64 (no more Apple-Silicon warning)…"
+if ! grep -qE '^[[:space:]]+platform:' compose.yaml 2>/dev/null; then
+  awk '/^    container_name:/ && !done { print; print "    platform: linux/amd64"; done=1; next } { print }' \
+    compose.yaml > compose.yaml.tmp && mv compose.yaml.tmp compose.yaml
 fi
 
 echo "→ Building and starting wrapper (this first build may take a few minutes)…"

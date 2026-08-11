@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import threading
@@ -161,8 +162,60 @@ def submit_2fa(code: str) -> dict:
     return {"ok": ok, "status": status, "response": body}
 
 
+def _ensure_platform_pin() -> None:
+    """Silence Docker's "amd64 image on arm64 host" platform warning.
+
+    wrapper-v2's image is linux/amd64 only (its Dockerfile builds with
+    BUILD_PLATFORM linux/amd64). On Apple Silicon Docker auto-emulates it via
+    Rosetta, but prints a platform-mismatch warning on every `compose up`.
+    Pinning `platform: linux/amd64` on the service makes the intent explicit
+    and the warning disappears. Idempotent — no-op when already pinned.
+    """
+    compose = WRAPPER_DIR / "compose.yaml"
+    if not compose.exists():
+        compose = WRAPPER_DIR / "docker-compose.yml"
+    if not compose.exists():
+        return
+    try:
+        lines = compose.read_text(encoding="utf-8").splitlines()
+        # Any existing service-level platform key wins (even a non-amd64 one)
+        # — inserting a second key would be a YAML duplicate.
+        if any(re.match(r"^\s+platform:", ln) for ln in lines):
+            return
+        for i, ln in enumerate(lines):
+            if "container_name:" in ln:
+                lines.insert(i + 1, "    platform: linux/amd64")
+                break
+        else:
+            return
+        compose.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass  # best-effort — a readable compose file still works, just warns
+
+
+def wrapper_v2_compose(args: list[str], timeout: int = 180) -> dict:
+    """Run a `docker compose …` command inside wrapper-v2/. Returns {ok}."""
+    if not WRAPPER_DIR.exists():
+        return {"ok": False, "error": "wrapper-v2 folder not found — set it up first (see `wrapper setup`)."}
+    docker = shutil.which("docker")
+    if not docker:
+        return {"ok": False, "error": "docker not found — install Docker Desktop and start it first."}
+    try:
+        out = subprocess.run(
+            [docker, "compose", *args],
+            cwd=str(WRAPPER_DIR),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if out.returncode != 0:
+            return {"ok": False, "error": (out.stderr or out.stdout or "docker compose failed").strip()[-400:]}
+        return {"ok": True}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"ok": False, "error": str(e)}
+
+
 def restart_login() -> dict:
     """Restart the wrapper container so it starts a brand-new login."""
+    _ensure_platform_pin()
     if not WRAPPER_DIR.exists():
         return {"ok": False, "error": "wrapper-v2 folder not found"}
     docker = shutil.which("docker")
@@ -231,6 +284,7 @@ def save_credentials(email: str, password: str) -> dict:
     """
     if not wrapper_present():
         return {"ok": False, "error": "wrapper-v2 isn't set up yet — run the Setup wizard first."}
+    _ensure_platform_pin()
     err = _check_creds(email, password)
     if err:
         return {"ok": False, "error": err}
@@ -365,6 +419,7 @@ def amdl_login(email: str, password: str) -> dict:
     try:
         out = subprocess.run(
             [docker, "run", "-d", "--name", AMDL_LOGIN_NAME,
+             "--platform", "linux/amd64",  # x86 image — explicit on Apple Silicon
              "--env-file", str(AMDL_DIR / "login.env"),
              "-v", f"{AMDL_DATA_DIR}:/app/rootfs/data",
              "-v", f"{AMDL_DATA_DIR}:/data",
@@ -420,6 +475,7 @@ def amdl_wrapper_start() -> dict:
     try:
         out = subprocess.run(
             [docker, "run", "-d", "--name", AMDL_RUN_NAME,
+             "--platform", "linux/amd64",  # x86 image — explicit on Apple Silicon
              "-v", f"{AMDL_DATA_DIR}:/app/rootfs/data",
              "-v", f"{AMDL_DATA_DIR}:/data",
              "-p", "10020:10020", "-p", "20020:20020",
@@ -515,6 +571,85 @@ def amdl_wrapper_status() -> dict:
 
 class SetupError(Exception):
     pass
+
+
+def _windows_bash() -> str | None:
+    r"""Locate a Windows bash, preferring Git Bash over WSL's shim.
+
+    `shutil.which("bash")` on Windows usually finds
+    C:\Windows\System32\bash.exe — the WSL *launcher* — before Git Bash,
+    because System32 sits early in PATH. WSL is a poor fit for
+    setup_wrapper.sh: it needs /mnt/c/… paths and its own docker/jq inside
+    the distro. Git Bash (ships cygpath, inherits the Windows PATH that
+    includes Docker Desktop's docker.exe) is the supported shell, so look
+    for it explicitly before falling back to whatever `bash` resolves to.
+    """
+    if os.name != "nt":
+        return shutil.which("bash")
+    candidates: list[str] = []
+    found = shutil.which("bash")
+    if found:
+        candidates.append(found)
+    for base in (
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ):
+        if os.path.exists(base):
+            candidates.append(base)
+    # A bash whose folder also ships cygpath.exe is Git Bash — prefer it.
+    for c in candidates:
+        if os.path.exists(os.path.join(os.path.dirname(c), "cygpath.exe")):
+            return c
+    return candidates[0] if candidates else None
+
+
+def _to_shell_path(path: str, bash: str) -> str:
+    r"""Convert a Windows path into the POSIX form the chosen bash reads.
+
+    This is the fix for the classic Windows wizard failure where Docker and
+    the APK both show "✓" and setup then dies with
+    `/bin/bash: C:\…\setup_wrapper.sh: No such file or directory`: a Windows
+    path was handed to a Linux shell. Git Bash wants /c/Users/… (cygpath),
+    WSL wants /mnt/c/Users/… (wslpath, driven through `wsl` from the Windows
+    side). Falls back to a manual drive-letter rewrite, then the raw path.
+    """
+    if os.name != "nt" or not re.match(r"^[A-Za-z]:[\\/]", path):
+        return path
+    bindir = os.path.dirname(bash)
+    # Git Bash: cygpath.exe sits right next to bash.exe.
+    cyg = os.path.join(bindir, "cygpath.exe")
+    if os.path.exists(cyg):
+        try:
+            out = subprocess.run([cyg, "-u", "--", path], capture_output=True, text=True, timeout=10)
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    # WSL shim (System32\bash.exe): wslpath lives inside the distro — drive
+    # it through the `wsl` command.
+    if bindir.lower().endswith("system32") and shutil.which("wsl"):
+        try:
+            out = subprocess.run(["wsl", "wslpath", "-u", path], capture_output=True, text=True, timeout=60)
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    # Generic: cygpath/wslpath on PATH.
+    for conv in ("cygpath", "wslpath"):
+        exe = shutil.which(conv)
+        if not exe:
+            continue
+        try:
+            out = subprocess.run([exe, "-u", "--", path], capture_output=True, text=True, timeout=10)
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+    # Manual Git-Bash rewrite: C:\Users\x → /c/Users/x
+    m = re.match(r"^([A-Za-z]):[\\/](.*)$", path)
+    if m:
+        return "/" + m.group(1).lower() + "/" + m.group(2).replace("\\", "/")
+    return path
 
 
 class SetupManager:
@@ -657,16 +792,22 @@ class SetupManager:
             self._add(f"✓ APK: {apk_path}")
 
             # 3. Run the setup script (non-interactive). setup_wrapper.sh is a
-            #    bash script — on Windows that needs Git Bash (or WSL). Give a
-            #    clear error instead of a confusing "not found" crash.
+            #    bash script — on Windows that means Git Bash (WSL also works
+            #    but needs /mnt/c paths + its own docker/jq). Prefer Git Bash
+            #    and translate Windows paths to the shell's POSIX form: the
+            #    classic failure is "✓ Docker ✓ APK" followed by
+            #    "/bin/bash: C:\…\setup_wrapper.sh: No such file or directory"
+            #    because a Windows path was handed to a Linux shell.
             self.step = "Cloning wrapper + extracting libraries…"
-            bash = shutil.which("bash")
+            bash = _windows_bash() if os.name == "nt" else shutil.which("bash")
+            self._add(f"→ using bash: {bash}")
             if not bash:
                 if os.name == "nt":
                     raise SetupError(
-                        "The wrapper setup script needs a bash shell, which Windows "
-                        "doesn't ship with. Install Git for Windows (Git Bash) or "
-                        "enable WSL, then run Setup again."
+                        "The wrapper setup needs a bash shell, which Windows "
+                        "doesn't ship with. Install Git for Windows (Git Bash) "
+                        "— the supported shell for this setup — then run Setup "
+                        "again."
                     )
                 raise SetupError("bash not found — the wrapper setup needs a bash shell.")
             env = dict(os.environ)
@@ -678,7 +819,10 @@ class SetupManager:
             _bundled_script("setup_wrapper.sh")
             _bundled_script("fix_wrapper_libs.sh")
             cmd = [
-                bash, str(_bundled_script("setup_wrapper.sh")), "--ui", apk_path,
+                bash,
+                _to_shell_path(str(_bundled_script("setup_wrapper.sh")), bash),
+                "--ui",
+                _to_shell_path(apk_path, bash),
             ]
             if apply_fix:
                 cmd.append("--fix-libs")
@@ -703,3 +847,182 @@ class SetupManager:
                 self.state = "failed"
                 self.error = str(e)
             self._add("✗ " + str(e))
+
+
+# ----------------------------------------------------------------------
+# Command line:  wrapper status | start | stop | restart | 2fa <code> |
+#                logs [N] | docker | setup
+# ----------------------------------------------------------------------
+# The `wrapper` shell script (repo root) dispatches here. Engine-aware:
+# Settings → Apple engine = "amdl" routes to the amdl wrapper, otherwise
+# wrapper-v2 (gamdl).
+
+
+def _engine_from_config() -> str:
+    try:
+        with open(PROJECT_DIR / "config.json", encoding="utf-8") as f:
+            cfg = json.load(f)
+        return "amdl" if str(cfg.get("apple_engine", "gamdl")) == "amdl" else "gamdl"
+    except Exception:
+        return "gamdl"
+
+
+def _cli_status() -> int:
+    if _engine_from_config() == "amdl":
+        s = amdl_wrapper_status()
+        print("engine:  amdl")
+        print(f"state:   {s.get('state')}")
+        print(f"docker:  {s.get('docker')}")
+        print(f"session: {'saved' if s.get('session_present') else 'none'}")
+        print(f"hint:    {s.get('hint')}")
+        return 0
+    s = wrapper_status()
+    if not s.get("reachable"):
+        print("wrapper: not reachable")
+        print("hint:    Is Docker running? Start Docker Desktop, then:  wrapper start")
+        return 1
+    print("engine:  wrapper-v2 (gamdl)")
+    print(f"state:   {s.get('auth_state') or 'unknown'}")
+    print(f"apple:   {s.get('apple_id') or '-'}")
+    print(f"ready:   playback={s.get('playback_ready')} loader={s.get('loader_ok')}")
+    print(f"hint:    {s.get('hint')}")
+    if s.get("auth_state") == "awaiting_2fa":
+        print("next:    got the code?  run:  wrapper 2fa 123456")
+    return 0
+
+
+def _cli_start() -> int:
+    if _engine_from_config() == "amdl":
+        r = amdl_wrapper_start()
+        if r.get("ok"):
+            print("✓ amdl wrapper started (wrapper-v2 was stopped if it held port 10020)")
+            return 0
+        print(f"✗ could not start the amdl wrapper: {r.get('error')}")
+        return 1
+    _ensure_platform_pin()
+    r = wrapper_v2_compose(["up", "-d"])
+    if not r.get("ok"):
+        print(f"✗ could not start wrapper-v2: {r.get('error')}")
+        return 1
+    print("✓ wrapper-v2 container started — Docker Desktop stays running")
+    print("next:  wrapper status")
+    return 0
+
+
+def _cli_stop() -> int:
+    if _engine_from_config() == "amdl":
+        amdl_wrapper_stop()
+        print("✓ amdl wrapper stopped — Docker Desktop stays running")
+        return 0
+    r = wrapper_v2_compose(["down"])
+    if not r.get("ok"):
+        print(f"✗ could not stop wrapper-v2: {r.get('error')}")
+        return 1
+    print("✓ wrapper-v2 stopped — Docker Desktop stays running")
+    return 0
+
+
+def _cli_restart() -> int:
+    if _engine_from_config() == "amdl":
+        r = amdl_restart_login()
+        if r.get("ok"):
+            print("✓ amdl login restarted — submit the new code with:  wrapper 2fa 123456")
+            return 0
+        print(f"✗ {r.get('error')}")
+        return 1
+    r = restart_login()
+    if r.get("ok"):
+        print("✓ wrapper restarted (fresh login) — if Apple asks for a code:")
+        print("      wrapper 2fa 123456")
+        return 0
+    print(f"✗ {r.get('error')}")
+    return 1
+
+
+def _cli_2fa(code: str) -> int:
+    if _engine_from_config() == "amdl":
+        r = amdl_submit_2fa(code)
+        if r.get("ok"):
+            print("✓ code written to the amdl login container")
+            return 0
+        print(f"✗ {r.get('error')}")
+        return 1
+    r = submit_2fa(code)
+    if r.get("ok"):
+        print("✓ code accepted — wrapper authenticated (ALAC / Atmos ready)")
+        return 0
+    resp = r.get("response")
+    msg = r.get("error")
+    if isinstance(resp, dict):
+        msg = resp.get("error") or resp.get("detail") or msg
+    print(f"✗ {msg or 'code rejected — double-check it and try again'}")
+    return 1
+
+
+def _cli_logs(n: int) -> int:
+    lines = amdl_wrapper_logs(n) if _engine_from_config() == "amdl" else wrapper_logs(n)
+    if not lines:
+        print("(no wrapper logs — is the container running?  wrapper status)")
+        return 1
+    print("\n".join(lines))
+    return 0
+
+
+def _cli_docker() -> int:
+    d = docker_status()
+    print(f"docker installed: {d.get('installed')}")
+    print(f"docker running:   {d.get('running')}")
+    return 0 if d.get("running") else 1
+
+
+def _cli_setup() -> int:
+    print("The wrapper needs the Apple Music Android libraries (FairPlay).")
+    print("  ./setup_wrapper.sh /path/to/apple-music.apk")
+    print("  (Apple Music 3.6.0-beta build 1109, arm64-v8a + x86_64 variant — README Step 3)")
+    print("Or in the app: '5 · Wrapper & login' → ⚙ Setup the wrapper (APK path or URL).")
+    return 0
+
+
+def _wrapper_cli(argv: list[str] | None = None) -> int:
+    import argparse
+
+    p = argparse.ArgumentParser(
+        prog="wrapper",
+        description="Music High Res — control the Apple Music decryption wrapper "
+                    "(wrapper-v2 for gamdl, or amdl). No app needed.",
+    )
+    sub = p.add_subparsers(dest="cmd")
+    sub.add_parser("status", help="wrapper + login state")
+    sub.add_parser("start", help="start the wrapper container (engine-aware)")
+    sub.add_parser("stop", help="stop the wrapper container (Docker keeps running)")
+    sub.add_parser("restart", help="force-recreate the wrapper (fresh login, new 2FA code)")
+    s2fa = sub.add_parser("2fa", help="submit the 6-digit Apple verification code")
+    s2fa.add_argument("code", help="the 6-digit code (digits only)")
+    slog = sub.add_parser("logs", help="tail the wrapper container log")
+    slog.add_argument("n", nargs="?", type=int, default=40, help="number of lines (default 40)")
+    sub.add_parser("docker", help="is Docker installed and running?")
+    sub.add_parser("setup", help="how to install the wrapper (needs an APK)")
+
+    args = p.parse_args(argv)
+    if args.cmd == "status":
+        return _cli_status()
+    if args.cmd == "start":
+        return _cli_start()
+    if args.cmd == "stop":
+        return _cli_stop()
+    if args.cmd == "restart":
+        return _cli_restart()
+    if args.cmd == "2fa":
+        return _cli_2fa(args.code)
+    if args.cmd == "logs":
+        return _cli_logs(args.n)
+    if args.cmd == "docker":
+        return _cli_docker()
+    if args.cmd == "setup":
+        return _cli_setup()
+    p.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(_wrapper_cli())

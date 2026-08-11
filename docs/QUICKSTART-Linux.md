@@ -1,4 +1,4 @@
-# Music High Res 2.0.0 — Linux quick start
+# Music High Res 2.1.0 — Linux quick start
 
 Download lossless **ALAC (up to 24-bit/192kHz)**, **AAC 256kbps**, or **Dolby
 Atmos** music from Apple Music — plus **Spotify** and **YouTube Music** —
@@ -40,6 +40,10 @@ Export cookies from `music.apple.com` ("Get cookies.txt LOCALLY" extension)
 3. In the app: Settings → enable **Use wrapper** → pick **ALAC** or **Atmos**.
 
 Or use the in-app wizard: **5 · Wrapper & login** → **⚙ Setup the wrapper**.
+
+The **`wrapper`** command (installed by setup to `~/.local/bin`, or
+`./wrapper` from this folder) shows the login state and submits your Apple
+code from the terminal: `wrapper status`, `wrapper 2fa 123456`.
 
 ## 5. Download
 

@@ -30,6 +30,25 @@ else
   echo "  ! gamdl binary not on PATH — install it with:  brew install gamdl  (or pip install gamdl)"
 fi
 
+echo "→ Installing the 'wrapper' command…"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$PWD/wrapper" "$HOME/.local/bin/wrapper"
+case "$(basename "${SHELL:-}")" in
+  zsh)  RC="$HOME/.zshrc" ;;
+  bash) RC="$HOME/.bashrc" ;;
+  *)    RC="" ;;
+esac
+if [ -n "$RC" ] && ! grep -q 'HOME/.local/bin' "$RC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Music High Res: expose the 'wrapper' command on PATH"
+    echo 'export PATH="$HOME/.local/bin:$PATH"'
+  } >> "$RC"
+  echo "  → added ~/.local/bin to your PATH in $RC (new terminals get the 'wrapper' command)"
+else
+  echo "  → symlinked to ~/.local/bin/wrapper (start.sh already adds it to PATH)"
+fi
+
 echo
 echo "✓ Setup complete."
 echo
