@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/License-Personal%20%2F%20Non--commercial-ff5b8a?style=flat-square" alt="License">
   <img src="https://img.shields.io/github/v/release/ZeroIndents/AppleMusic-Song-Downloader?style=flat-square" alt="Release">
-  <img src="https://img.shields.io/badge/v1.2.0-Release-ff5b8a?style=flat-square" alt="v1.2.0">
+  <img src="https://img.shields.io/badge/v2.0.0-Release-ff5b8a?style=flat-square" alt="v2.0.0">
 </p>
 
 <p align="center">

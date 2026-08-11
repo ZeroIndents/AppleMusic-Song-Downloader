@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions loosely follow [Semantic Versioning](https://semver.org/).
 - **[Unreleased]** — changes in the working tree not yet released.
 
-## [1.3.0] - 2026-08-10
+## [2.0.0] - 2026-08-10
 
 ### Added — 30 small/medium features
 - **⬆ In-app updater** — the header shows a ⬆ pill when a newer Music High Res
@@ -79,7 +79,7 @@ Legend: **Added** — new features · **Changed** — changes to existing behavi
 
 ---
 
-### Added — v1.2-era library features (included in 1.3.0)
+### Added — v1.2-era library features (included in 2.0.0)
 
 - **🌓 Light / dark theme** — one-click toggle in the header (or press **t**);
   the whole palette is CSS-variable driven, and your choice is remembered
