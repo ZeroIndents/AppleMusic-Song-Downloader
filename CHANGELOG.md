@@ -11,6 +11,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.2] - 2026-08-11
+
+### Fixed
+- **Fresh install on Apple Silicon: the wrapper now starts cleanly** — the
+  `platform: linux/amd64` pin anchors on the first compose service instead of
+  `container_name:` (which silently skipped on some upstream `compose.yaml`
+  variants), and the wrapper's `data` mount folder is pre-created + made
+  writable before `docker compose up`, fixing
+  `mkdir …/wrapper-v2/data: permission denied` on Docker Desktop for Mac.
+- **Existing installs self-heal** — `wrapper start` / `wrapper restart` and
+  the launcher (`start.sh`) re-apply the pin + data-folder prep on every run,
+  so the platform warning and the mount error clear without re-running setup.
+
+### Added
+- **`wrapper prepare`** — pins the amd64 platform and pre-creates the data
+  folders, then exits. Handy for checking/healing an existing install.
+
 ## [2.1.1] - 2026-08-11
 
 ### Added

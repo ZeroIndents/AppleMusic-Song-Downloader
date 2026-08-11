@@ -1,4 +1,4 @@
-# Music High Res 2.1.1 — Windows quick start
+# Music High Res 2.1.2 — Windows quick start
 
 Download lossless **ALAC (up to 24-bit/192kHz)**, **AAC 256kbps**, or **Dolby
 Atmos** music from Apple Music — plus **Spotify** and **YouTube Music** —

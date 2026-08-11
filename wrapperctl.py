@@ -162,35 +162,77 @@ def submit_2fa(code: str) -> dict:
     return {"ok": ok, "status": status, "response": body}
 
 
-def _ensure_platform_pin() -> None:
+def _ensure_platform_pin() -> bool:
     """Silence Docker's "amd64 image on arm64 host" platform warning.
 
     wrapper-v2's image is linux/amd64 only (its Dockerfile builds with
     BUILD_PLATFORM linux/amd64). On Apple Silicon Docker auto-emulates it via
     Rosetta, but prints a platform-mismatch warning on every `compose up`.
     Pinning `platform: linux/amd64` on the service makes the intent explicit
-    and the warning disappears. Idempotent — no-op when already pinned.
+    and the warning disappears. Anchored on the FIRST service definition
+    (any indentation) rather than a specific key like container_name, which
+    silently no-oped on some upstream compose.yaml variants. Idempotent;
+    returns True when the file was actually edited.
     """
     compose = WRAPPER_DIR / "compose.yaml"
     if not compose.exists():
         compose = WRAPPER_DIR / "docker-compose.yml"
     if not compose.exists():
-        return
+        return False
     try:
         lines = compose.read_text(encoding="utf-8").splitlines()
         # Any existing service-level platform key wins (even a non-amd64 one)
         # — inserting a second key would be a YAML duplicate.
         if any(re.match(r"^\s+platform:", ln) for ln in lines):
-            return
+            return False
+        in_services = False
         for i, ln in enumerate(lines):
-            if "container_name:" in ln:
-                lines.insert(i + 1, "    platform: linux/amd64")
+            if re.match(r"^services:", ln):
+                in_services = True
+                continue
+            m = re.match(r"^([ \t]+)[A-Za-z0-9_.-]+:[ \t]*$", ln)
+            if in_services and m:
+                lines.insert(i + 1, m.group(1) + "  platform: linux/amd64")
                 break
         else:
-            return
+            return False
         compose.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return True
     except OSError:
-        pass  # best-effort — a readable compose file still works, just warns
+        return False  # best-effort — a readable compose file still works, just warns
+
+
+def _prepare_mount_dirs() -> list[str]:
+    """Pre-create + make writable the bind-mount source dirs from compose.yaml.
+
+    Docker creates a missing mount source as root; on Docker Desktop for Mac
+    that can fail with "mkdir …/wrapper-v2/data: permission denied" and the
+    wrapper never starts. Creating the dirs as the current user first avoids
+    the daemon-side mkdir entirely. Idempotent. Returns warning strings.
+    Only short-form bind mounts (`- ./src:…`) are matched — upstream
+    wrapper-v2 uses that form; if it ever switches to long-form `- type:
+    bind` mounts this must be extended.
+    """
+    warnings: list[str] = []
+    compose = WRAPPER_DIR / "compose.yaml"
+    if not compose.exists():
+        compose = WRAPPER_DIR / "docker-compose.yml"
+    if not compose.exists():
+        return warnings
+    try:
+        for line in compose.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^\s*-\s*\./([^:]+):", line)
+            if not m:
+                continue
+            src = WRAPPER_DIR / m.group(1).strip()
+            try:
+                src.mkdir(parents=True, exist_ok=True)
+                src.chmod(src.stat().st_mode | 0o700)
+            except OSError as e:
+                warnings.append(f"could not prepare {src}: {e}")
+    except OSError:
+        pass
+    return warnings
 
 
 def wrapper_v2_compose(args: list[str], timeout: int = 180) -> dict:
@@ -200,6 +242,11 @@ def wrapper_v2_compose(args: list[str], timeout: int = 180) -> dict:
     docker = shutil.which("docker")
     if not docker:
         return {"ok": False, "error": "docker not found — install Docker Desktop and start it first."}
+    # Heal common Apple-Silicon issues on every invocation: pin the amd64
+    # platform (silences the warning) and pre-create the bind-mount dirs so
+    # Docker never fails with "mkdir …/data: permission denied".
+    _ensure_platform_pin()
+    _prepare_mount_dirs()
     try:
         out = subprocess.run(
             [docker, "compose", *args],
@@ -216,6 +263,7 @@ def wrapper_v2_compose(args: list[str], timeout: int = 180) -> dict:
 def restart_login() -> dict:
     """Restart the wrapper container so it starts a brand-new login."""
     _ensure_platform_pin()
+    _prepare_mount_dirs()
     if not WRAPPER_DIR.exists():
         return {"ok": False, "error": "wrapper-v2 folder not found"}
     docker = shutil.which("docker")
@@ -285,6 +333,7 @@ def save_credentials(email: str, password: str) -> dict:
     if not wrapper_present():
         return {"ok": False, "error": "wrapper-v2 isn't set up yet — run the Setup wizard first."}
     _ensure_platform_pin()
+    _prepare_mount_dirs()
     err = _check_creds(email, password)
     if err:
         return {"ok": False, "error": err}
@@ -1022,6 +1071,26 @@ def _cli_docker() -> int:
     return 0 if d.get("running") else 1
 
 
+def _cli_prepare() -> int:
+    """Pin the amd64 platform + pre-create the wrapper's data folders.
+
+    Heals the Apple-Silicon platform warning and the "mkdir …/data: permission
+    denied" mount failure on existing installs. Used by start.sh before it
+    runs `docker compose up`.
+    """
+    if not WRAPPER_DIR.exists():
+        print("✗ wrapper-v2 folder not found — set it up first (see `wrapper setup`).")
+        return 1
+    pinned = _ensure_platform_pin()
+    print("✓ platform pinned to linux/amd64 (no Apple-Silicon warning)" if pinned
+          else "✓ platform already pinned to linux/amd64")
+    warnings = _prepare_mount_dirs()
+    for w in warnings:
+        print(f"! {w}")
+    print("✓ wrapper data folders ready")
+    return 0 if not warnings else 1
+
+
 def _cli_setup() -> int:
     print("The wrapper needs the Apple Music Android libraries (FairPlay).")
     print("  ./setup_wrapper.sh /path/to/apple-music.apk")
@@ -1048,6 +1117,7 @@ def _wrapper_cli(argv: list[str] | None = None) -> int:
     slog = sub.add_parser("logs", help="tail the wrapper container log")
     slog.add_argument("n", nargs="?", type=int, default=40, help="number of lines (default 40)")
     sub.add_parser("docker", help="is Docker installed and running?")
+    sub.add_parser("prepare", help="pin amd64 platform + prep data folders (heals Apple-Silicon issues)")
     sub.add_parser("setup", help="how to install the wrapper (needs an APK)")
 
     args = p.parse_args(argv)
@@ -1065,6 +1135,8 @@ def _wrapper_cli(argv: list[str] | None = None) -> int:
         return _cli_logs(args.n)
     if args.cmd == "docker":
         return _cli_docker()
+    if args.cmd == "prepare":
+        return _cli_prepare()
     if args.cmd == "setup":
         return _cli_setup()
     p.print_help()

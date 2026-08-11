@@ -173,11 +173,38 @@ fi
 # The image is linux/amd64 only (built with BUILD_PLATFORM=linux/amd64). On
 # Apple Silicon Docker emulates it via Rosetta but prints a platform-mismatch
 # warning on every `compose up`. A service-level `platform:` pin silences it.
-# (awk, not sed, because inserting a line portably across BSD/GNU is painful.)
+# Anchored on the FIRST service definition (any indentation) rather than a
+# specific key — upstream compose.yaml has changed shape before, and a
+# no-match used to skip the pin silently.
 echo "→ Pinning platform to linux/amd64 (no more Apple-Silicon warning)…"
 if ! grep -qE '^[[:space:]]+platform:' compose.yaml 2>/dev/null; then
-  awk '/^    container_name:/ && !done { print; print "    platform: linux/amd64"; done=1; next } { print }' \
-    compose.yaml > compose.yaml.tmp && mv compose.yaml.tmp compose.yaml
+  awk '
+    /^services:/ { insvc = 1; print; next }
+    insvc && !done && /^[[:space:]]+[A-Za-z0-9_.-]+:[[:space:]]*$/ {
+      indent = $0; sub(/[A-Za-z0-9_.-]+:.*/, "", indent)
+      print
+      print indent "  platform: linux/amd64"
+      done = 1
+      next
+    }
+    { print }
+  ' compose.yaml > compose.yaml.tmp && mv compose.yaml.tmp compose.yaml
+fi
+
+# Docker creates a missing bind-mount source dir as root; on Docker Desktop
+# for Mac that can fail with "mkdir …/wrapper-v2/data: permission denied" and
+# the wrapper never starts. Pre-create the sources (from ./path: volumes in
+# compose.yaml) as the current user so no daemon-side mkdir is needed.
+echo "→ Preparing wrapper data folders…"
+if command -v grep >/dev/null 2>&1; then
+  for d in $(grep -oE '^[[:space:]]*-[[:space:]]*\./[^:]+' compose.yaml | sed -E 's/^[[:space:]]*-[[:space:]]*\.\///' | sort -u); do
+    [ -n "$d" ] || continue
+    if ! mkdir -p "$d" 2>/dev/null; then
+      echo "! cannot create $d — try:  sudo chown -R \"$(id -un)\" \"$(pwd)/$d\"  then re-run"
+    else
+      chmod u+rwx "$d" 2>/dev/null || true
+    fi
+  done
 fi
 
 echo "→ Building and starting wrapper (this first build may take a few minutes)…"

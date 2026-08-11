@@ -143,6 +143,10 @@ fi
 # ── 4. ALAC wrapper (wrapper-v2) ──────────────────────────────────────
 if [ "$MIN_MODE" != "1" ] && [ -d wrapper-v2 ] && docker_ok; then
   say "Starting the ALAC wrapper…"
+  # Heal Apple-Silicon issues before compose up: pin the amd64 platform
+  # (silences the platform-mismatch warning) and pre-create the data mount
+  # folder (fixes "mkdir …/wrapper-v2/data: permission denied").
+  [ -x .venv/bin/python ] && .venv/bin/python wrapperctl.py prepare >/dev/null 2>&1 || true
   ( cd wrapper-v2 && docker compose up -d )
   WRAPPER_STARTED=1
   sleep 3

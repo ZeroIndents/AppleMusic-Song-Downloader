@@ -11,6 +11,8 @@
 #   wrapper 2fa 123456        submit the 6-digit Apple code
 #   wrapper logs [40]         tail the wrapper container log
 #   wrapper docker            is Docker up?
+#   wrapper prepare           pin amd64 platform + prep data folders (heals
+#                             Apple-Silicon warning / mount errors)
 #   wrapper setup             how to install the wrapper (needs an APK)
 #
 # Run it as `./wrapper` from the project folder, or plain `wrapper` once the
