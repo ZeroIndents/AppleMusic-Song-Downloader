@@ -307,6 +307,7 @@ Jellyfin and Plex also work well with ALAC/FLAC libraries.
 | `401 / authentication` errors | Cookies expired — re-export and replace `cookies.txt` |
 | ALAC / **Dolby Atmos** fails with a cryptic gamdl error (`-1002`, "could not find requested codec") | Atmos and pure ALAC **require** the wrapper — the app now fails fast with a clear message (enable **Use wrapper** in Settings → Wrapper & login; start Docker; log in). See Step 3 |
 | ALAC fails with `-42812` (Intel) | Run `./fix_wrapper_libs.sh` (the symbol fix) |
+| Download fails with `playback_dispatch_failed` / `Apple store error code=-13305880` | **Apple-side rejection** — Apple refused to dispatch playback for that track: it usually isn't available for your account in its region/storefront, or the wrapper login went stale. Re-log in from the app's "5 · Wrapper & login" panel, then ↻ Retry. If other tracks download fine, that track is simply restricted for your account |
 | `No active Apple Music subscription` | Confirm your plan at music.apple.com |
 | Artist link downloads nothing | gamdl prompts interactively; the app auto-selects **All albums** (change in Settings) |
 | Wrapper login stuck / no 2FA code | Check Gmail (incl. spam), SMS, trusted devices. App panel "5 · Wrapper & login" shows live state. Apple rate-limits rapid retries — wait ~10 min between attempts |

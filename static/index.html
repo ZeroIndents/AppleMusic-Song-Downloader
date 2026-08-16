@@ -573,6 +573,51 @@ if ("serviceWorker" in navigator) {
   }
   .lib-playlist .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
+  /* ---------- library tools sidebar (iOS-style) ---------- */
+  .lib-toolbar-divider {
+    width: 1px; align-self: stretch; margin: 2px 2px;
+    background: var(--border); border-radius: 2px;
+  }
+  .btn.ghost.lib-more-btn {
+    border-color: rgba(175,82,222,.45);
+    color: #e8b7ff;
+    background: rgba(175,82,222,.12);
+  }
+  .btn.ghost.lib-more-btn:hover:not(:disabled) { filter: brightness(1.25); }
+  [data-theme="light"] .btn.ghost.lib-more-btn {
+    color: #7a3dd0;
+    background: rgba(120,80,220,.1);
+    border-color: rgba(120,80,220,.4);
+  }
+  .lib-tools-drawer { width: min(340px, 92vw); padding: 20px 18px; }
+  .lib-tool-group { margin-bottom: 16px; }
+  .lib-tool-group-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.2px; color: var(--muted); margin: 0 4px 7px;
+  }
+  .lib-tool-row {
+    appearance: none; border: 0; cursor: pointer;
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    background: transparent; color: var(--text); text-align: left;
+    font: 500 13.5px var(--sans); padding: 10px 13px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s ease;
+  }
+  .lib-tool-row:last-child { border-bottom: 0; }
+  .lib-tool-row:hover { background: rgba(255,255,255,.06); }
+  .lib-tool-row:active { background: rgba(175,82,222,.14); }
+  .lib-tool-row:disabled { opacity: .45; cursor: wait; }
+  .lib-tool-row .t-ic {
+    width: 30px; height: 30px; border-radius: 8px; flex: none;
+    display: grid; place-items: center; font-size: 15px;
+    background: var(--panel-2); border: 1px solid var(--border);
+  }
+  .lib-tool-row .t-lb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-tool-row .t-che { color: var(--muted); font-size: 16px; line-height: 1; }
+  [data-theme="light"] .lib-tool-row:hover { background: rgba(0,0,0,.05); }
+  [data-theme="light"] .lib-tool-row:active { background: rgba(120,80,220,.12); }
+  [data-theme="light"] .lib-tool-row .t-ic { background: rgba(0,0,0,.05); }
+
   /* ---------- in-app player bar ---------- */
   #lyrics-panel {
     position: fixed; bottom: 66px; right: 18px; z-index: 39;
@@ -719,6 +764,7 @@ if ("serviceWorker" in navigator) {
     header { margin: -18px -14px 20px; padding: 12px 14px; }
     .card { padding: 16px; }
     .btn { width: 100%; justify-content: center; }
+    .lib-toolbar-divider { display: none; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -822,28 +868,12 @@ if ("serviceWorker" in navigator) {
         <option value="newest">Sort: newest added</option>
         <option value="biggest">Sort: biggest</option>
       </select>
-      <button class="btn ghost small" id="btn-lib-releases" title="New releases from your artists">✨ Releases</button>
-      <button class="btn ghost small" id="btn-lib-dupes" title="Find duplicate files">Duplicate finder</button>
-      <button class="btn ghost small" id="btn-lib-smart-dupes" title="Same song, different file (audio fingerprint)">🎧 Smart dupes</button>
-      <button class="btn ghost small" id="btn-lib-cleanup" title="Same track in multiple formats (FLAC + ALAC) — delete the ones you don't want">🧹 Cleanup</button>
-      <button class="btn ghost small" id="btn-lib-stats" title="Library dashboard stats + history + quality histogram">📊 Stats</button>
-      <button class="btn ghost small" id="btn-lib-ledger" title="SQLite ledger of everything downloaded — the authoritative 'do I own this?' index">📒 Ledger</button>
+      <span class="lib-toolbar-divider" aria-hidden="true"></span>
       <button class="btn ghost small" id="btn-lib-search" title="Search the Apple Music catalog and queue links without leaving the app">🔍 Search</button>
-      <button class="btn ghost small" id="btn-lib-playlists" title="Saved smart-playlist filters (artist / year / quality / recent) → export .m3u">▶ Smart playlists</button>
-      <button class="btn ghost small" id="btn-lib-wishlist" title="Links saved for later">⭐ Wishlist</button>
-      <button class="btn ghost small" id="btn-lib-replaygain" title="Write ReplayGain loudness tags (EBU R128) across the whole library">🎚 ReplayGain</button>
-      <button class="btn ghost small" id="btn-lib-lyrics" title="Fetch missing lyrics from LRCLIB (free synced-lyrics API)">💬 Lyrics</button>
-      <button class="btn ghost small" id="btn-lib-upgrade" title="Albums you only have in lossy quality — re-download them lossless">⬆ Upgrade</button>
-      <button class="btn ghost small" id="btn-lib-mb" title="Auto-fix track tags from MusicBrainz (whole library)">🧠 MusicBrainz</button>
-      <button class="btn ghost small" id="btn-lib-m3u" title="Export the whole library as a .m3u playlist">⤓ .m3u</button>
-      <button class="btn ghost small" id="btn-lib-empty" title="Find and delete empty folders">🗑 Empty dirs</button>
-      <button class="btn ghost small" id="btn-lib-logs" title="View app and launcher logs">📜 Logs</button>
-      <button class="btn ghost small" id="btn-lib-scan" title="Trigger a scan on your media server now">📡 Scan now</button>
-      <button class="btn ghost small" id="btn-lib-recent" title="Recently played tracks (play tracking)">🕘 Recent</button>
-      <button class="btn ghost small" id="btn-lib-mostplayed" title="Most-played tracks (play counts)">🔥 Most played</button>
+      <button class="btn ghost small" id="btn-lib-releases" title="New releases from your artists">✨ Releases</button>
       <button class="btn ghost small" id="btn-lib-import" title="Import an Apple Music library.xml or an .m3u playlist">📥 Import</button>
-      <button class="btn ghost small" id="btn-lib-index" title="Export the whole library as CSV or an HTML page">⤓ Index</button>
       <button class="btn ghost small" id="btn-lib-export" title="Download a JSON backup">⬇ Backup</button>
+      <button class="btn ghost small lib-more-btn" id="btn-lib-more" title="All the other library tools" aria-haspopup="dialog" aria-controls="lib-tools-drawer" aria-expanded="false">⋯ More</button>
     </div>
     <div id="bulk-bar" style="display:none; align-items:center; gap:10px; margin-bottom:10px; background:rgba(175,82,222,.1); border:1px solid rgba(175,82,222,.35); border-radius:10px; padding:8px 12px; font-size:12.5px">
       <span id="bulk-count">0 selected</span>
@@ -855,6 +885,56 @@ if ("serviceWorker" in navigator) {
     <div id="lib-root"><div class="lib-empty">Scanning your music folder…</div></div>
     <div class="hint" id="lib-hint" style="display:none"></div>
   </section>
+
+  <!-- Library tools sidebar (iOS-style) — the ⋯ More button in the Library
+       toolbar opens this; every tool keeps the same button id, so all the
+       existing addEventListener bindings keep working unchanged. -->
+  <div class="drawer-back" id="lib-tools-back" style="display:none"></div>
+  <aside class="drawer lib-tools-drawer" id="lib-tools-drawer" role="dialog" aria-modal="true" aria-label="Library tools" aria-hidden="true">
+    <div class="drawer-head">
+      <h3><span class="num">⌘</span> Library tools</h3>
+      <button class="link-btn" id="lib-tools-close">✕ Close</button>
+    </div>
+    <p class="muted-sm" style="margin:2px 0 14px">Everything else you can do with your library.</p>
+
+    <div class="lib-tool-group">
+      <div class="lib-tool-group-label">Duplicate & cleanup</div>
+      <button class="lib-tool-row" id="btn-lib-dupes" title="Find duplicate files"><span class="t-ic">🗂</span><span class="t-lb">Duplicate finder</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-smart-dupes" title="Same song, different file (audio fingerprint)"><span class="t-ic">🎧</span><span class="t-lb">Smart dupes</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-cleanup" title="Same track in multiple formats (FLAC + ALAC) — delete the ones you don't want"><span class="t-ic">🧹</span><span class="t-lb">Cleanup</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-empty" title="Find and delete empty folders"><span class="t-ic">🗑</span><span class="t-lb">Empty dirs</span><span class="t-che">›</span></button>
+    </div>
+
+    <div class="lib-tool-group">
+      <div class="lib-tool-group-label">Improve quality</div>
+      <button class="lib-tool-row" id="btn-lib-upgrade" title="Albums you only have in lossy quality — re-download them lossless"><span class="t-ic">⬆</span><span class="t-lb">Upgrade to lossless</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-replaygain" title="Write ReplayGain loudness tags (EBU R128) across the whole library"><span class="t-ic">🎚</span><span class="t-lb">ReplayGain</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-mb" title="Auto-fix track tags from MusicBrainz (whole library)"><span class="t-ic">🧠</span><span class="t-lb">MusicBrainz tags</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-lyrics" title="Fetch missing lyrics from LRCLIB (free synced-lyrics API)"><span class="t-ic">💬</span><span class="t-lb">Fetch lyrics</span><span class="t-che">›</span></button>
+    </div>
+
+    <div class="lib-tool-group">
+      <div class="lib-tool-group-label">Stats & history</div>
+      <button class="lib-tool-row" id="btn-lib-stats" title="Library dashboard stats + history + quality histogram"><span class="t-ic">📊</span><span class="t-lb">Stats</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-ledger" title="SQLite ledger of everything downloaded — the authoritative 'do I own this?' index"><span class="t-ic">📒</span><span class="t-lb">Ledger</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-mostplayed" title="Most-played tracks (play counts)"><span class="t-ic">🔥</span><span class="t-lb">Most played</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-recent" title="Recently played tracks (play tracking)"><span class="t-ic">🕘</span><span class="t-lb">Recent</span><span class="t-che">›</span></button>
+    </div>
+
+    <div class="lib-tool-group">
+      <div class="lib-tool-group-label">Playlists & lists</div>
+      <button class="lib-tool-row" id="btn-lib-playlists" title="Saved smart-playlist filters (artist / year / quality / recent) → export .m3u"><span class="t-ic">▶</span><span class="t-lb">Smart playlists</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-wishlist" title="Links saved for later"><span class="t-ic">⭐</span><span class="t-lb">Wishlist</span><span class="t-che">›</span></button>
+    </div>
+
+    <div class="lib-tool-group">
+      <div class="lib-tool-group-label">Export & system</div>
+      <button class="lib-tool-row" id="btn-lib-m3u" title="Export the whole library as a .m3u playlist"><span class="t-ic">⤓</span><span class="t-lb">Export .m3u</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-index" title="Export the whole library as CSV or an HTML page"><span class="t-ic">📄</span><span class="t-lb">Export index</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-logs" title="View app and launcher logs"><span class="t-ic">📜</span><span class="t-lb">Logs</span><span class="t-che">›</span></button>
+      <button class="lib-tool-row" id="btn-lib-scan" title="Trigger a scan on your media server now"><span class="t-ic">📡</span><span class="t-lb">Scan media server</span><span class="t-che">›</span></button>
+    </div>
+  </aside>
 
   <section class="card">
     <h2><span class="num">3</span> Downloads
@@ -2075,6 +2155,22 @@ function closeSetupDrawer() {
   $("setup-drawer").classList.remove("open");
   $("setup-drawer").setAttribute("aria-hidden", "true");
   $("drawer-back").style.display = "none";
+}
+
+/* ---------------- library tools sidebar ---------------- */
+function openLibTools() {
+  $("lib-tools-drawer").classList.add("open");
+  $("lib-tools-drawer").setAttribute("aria-hidden", "false");
+  $("lib-tools-back").style.display = "block";
+  $("btn-lib-more").setAttribute("aria-expanded", "true");
+  $("lib-tools-close").focus();
+}
+
+function closeLibTools() {
+  $("lib-tools-drawer").classList.remove("open");
+  $("lib-tools-drawer").setAttribute("aria-hidden", "true");
+  $("lib-tools-back").style.display = "none";
+  $("btn-lib-more").setAttribute("aria-expanded", "false");
 }
 
 /* ---------------- settings ---------------- */
@@ -5223,6 +5319,15 @@ $("btn-w-setup-toggle").addEventListener("click", () => {
   }
 });
 $("btn-w-setup-start").addEventListener("click", startWrapperSetup);  $("btn-lib-refresh").addEventListener("click", refreshLibrary);
+  // Library tools sidebar (⋯ More) — open via the button, close via ✕,
+  // the backdrop, Escape, or by running any tool.
+  $("btn-lib-more").addEventListener("click", openLibTools);
+  $("lib-tools-close").addEventListener("click", closeLibTools);
+  $("lib-tools-back").addEventListener("click", closeLibTools);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLibTools(); });
+  $("lib-tools-drawer").addEventListener("click", (e) => {
+    if (e.target.closest(".lib-tool-row")) setTimeout(closeLibTools, 60);
+  });
   $("btn-lib-releases").addEventListener("click", showNewReleases);
   $("btn-lib-dupes").addEventListener("click", showDuplicates);
   $("btn-lib-smart-dupes").addEventListener("click", showSmartDuplicates);

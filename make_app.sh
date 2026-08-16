@@ -95,28 +95,76 @@ iconutil -c icns /tmp/mhr-icon.iconset -o "$RES/AppIcon.icns"
 rm -rf /tmp/mhr-icon.iconset
 echo "  icon → AppIcon.icns"
 
-# 3. Launcher executable
-cat > "$MACOS/MusicHighRes" <<'SH'
+# 3. Launcher executable — a small NATIVE Mach-O binary (not a shell
+# script). LaunchServices sometimes silently refuses to launch script-based
+# app bundles (icon hops once, nothing happens); a compiled executable is
+# handled deterministically, like every regular Mac app. The binary finds the
+# project folder by walking up from its own location looking for start.sh,
+# then execs it in app-style mode.
+cat > /tmp/mhr-launcher.c <<'C'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <limits.h>
+
+static int is_executable(const char *path) {
+    return access(path, X_OK) == 0;
+}
+
+int main(int argc, char **argv) {
+    char exe[PATH_MAX];
+    char dir[PATH_MAX];
+
+    if (!realpath(argv[0], exe)) {
+        fprintf(stderr, "MusicHighRes: cannot resolve launcher path\n");
+        return 127;
+    }
+    snprintf(dir, sizeof(dir), "%s", exe);
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0'; /* dir = Contents/MacOS */
+
+    /* Walk up from Contents/MacOS looking for the project's start.sh. */
+    char probe[PATH_MAX];
+    char project[PATH_MAX] = "";
+    for (int i = 0; i < 8; i++) {
+        snprintf(probe, sizeof(probe), "%s/start.sh", dir);
+        if (is_executable(probe)) {
+            snprintf(project, sizeof(project), "%s", dir);
+            break;
+        }
+        char *s = strrchr(dir, '/');
+        if (!s || s == dir) break;
+        *s = '\0';
+    }
+    if (!project[0]) {
+        fprintf(stderr, "MusicHighRes: start.sh not found next to the app bundle\n");
+        return 127;
+    }
+
+    if (chdir(project) != 0) {
+        perror("MusicHighRes: chdir");
+        return 127;
+    }
+    execl("/bin/bash", "bash", "start.sh", "--app-style", (char *)0);
+    perror("MusicHighRes: exec");
+    return 127;
+}
+C
+if command -v cc >/dev/null 2>&1 && cc -O2 -o "$MACOS/MusicHighRes" /tmp/mhr-launcher.c; then
+  rm -f /tmp/mhr-launcher.c
+else
+  echo "  ! clang/cc unavailable or compile failed — falling back to a shell-script launcher"
+  cat > "$MACOS/MusicHighRes" <<'SH'
 #!/bin/bash
-# Music High Res — app launcher (inside the .app bundle).
-# Delegates to the universal start.sh --app-style: boots Docker → ALAC
-# wrapper → app server, then opens the UI in a standalone app-style window.
-# The app stays alive in the Dock while the server runs.
+# Music High Res — fallback shell launcher (cc was unavailable at build time).
 set -u
 PROJECT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$PROJECT" || exit 1
-
-# launchd hands .app bundles a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
-# that does NOT include Homebrew's /usr/local/bin (or /opt/homebrew/bin on
-# Apple Silicon). start.sh sets a sane PATH itself, but set it here too so
-# the `bash` invocation below can find everything regardless.
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
-
-# One source of truth for the whole boot sequence: start.sh. It also keeps
-# this process alive (waits on the server PID) so the app stays in the Dock
-# until the user right-clicks → Quit.
 exec bash "$PROJECT/start.sh" --app-style
 SH
+fi
 chmod +x "$MACOS/MusicHighRes"
 
 # 4. Info.plist

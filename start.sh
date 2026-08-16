@@ -36,6 +36,7 @@ fail() { echo "✗ $1"; }
 
 MIN_MODE=0; NO_BROWSER=0; APP_STYLE=0; NO_DOCKER=0
 WRAPPER_STARTED=0   # we started the wrapper this session (stop it on close)
+WINDOW_PID=""       # app-style browser window (only set in --app-style mode)
 for arg in "$@"; do
   case "$arg" in
     --min)        MIN_MODE=1 ;;
@@ -234,6 +235,11 @@ open_url() {
 #      Docker Desktop itself is left running.
 # cleanup() is idempotent, so it's safe to run on EXIT as well.
 cleanup() {
+  # App-style: closing the app window means the app quits, so close the
+  # browser window too on Dock-Quit.
+  if [ -n "${WINDOW_PID:-}" ]; then
+    kill "$WINDOW_PID" 2>/dev/null
+  fi
   if [ -n "${SERVER_PID:-}" ]; then
     kill "$SERVER_PID" 2>/dev/null
     sleep 1   # let our server free port 8741 before probing below
@@ -286,12 +292,30 @@ if [ "$NO_BROWSER" = "1" ]; then
   say "Skipping browser (--no-browser). UI is at http://127.0.0.1:8741"
 elif [ "$APP_STYLE" = "1" ]; then
   # Standalone app-style window (used by the Music High Res.app bundle).
+  #
+  # The browser binary is launched DIRECTLY (not via `open`) and this script
+  # waits on it. When the user closes the window, the browser process exits,
+  # the app quits, and the server/wrapper are cleaned up. A dedicated
+  # --user-data-dir makes the window a truly separate process (Chromium hands
+  # off to an existing instance otherwise), so waiting actually works.
+  #
+  # Why this matters: if the app lingered in the background (old design),
+  # LaunchServices treats it as a single instance — re-clicking the icon just
+  # activates the zombie and nothing happens ("logo hops once, then nothing").
+  WINDOW_PID=""
+  APP_PROFILE="$HOME/Library/Caches/mhr-app-style"
   for BROWSER in "Brave Browser" "Google Chrome" "Microsoft Edge" "Arc"; do
-    if [ -d "/Applications/$BROWSER.app" ]; then
-      open -na "$BROWSER" --args --app=http://127.0.0.1:8741 2>/dev/null && break
+    BIN="/Applications/$BROWSER.app/Contents/MacOS/$BROWSER"
+    if [ -x "$BIN" ]; then
+      "$BIN" --app="http://127.0.0.1:8741" --user-data-dir="$APP_PROFILE" >/dev/null 2>&1 &
+      WINDOW_PID=$!
+      say "App window opened in $BROWSER (closing it quits the app)."
+      break
     fi
   done
-  open_url http://127.0.0.1:8741
+  if [ -z "$WINDOW_PID" ]; then
+    open_url http://127.0.0.1:8741        # fallback: no Chromium app found
+  fi
 else
   open_url http://127.0.0.1:8741
   say "If the browser didn't open, go to:  http://127.0.0.1:8741"
@@ -328,7 +352,14 @@ fi
 
 # Keep the terminal/app alive while the server runs (so Ctrl+C / Dock-Quit
 # stops it). If we reused an existing server, just wait on it too.
-if [ -n "$SERVER_PID" ]; then
+if [ -n "$WINDOW_PID" ]; then
+  # App-style: live while the app window is open. If the server dies first
+  # (crash), close the window too so the app exits cleanly.
+  while kill -0 "$WINDOW_PID" 2>/dev/null && kill -0 "$SERVER_PID" 2>/dev/null; do
+    sleep 2
+  done
+  kill "$WINDOW_PID" 2>/dev/null
+elif [ -n "$SERVER_PID" ]; then
   wait "$SERVER_PID"
 elif curl -s -m 2 -o /dev/null http://127.0.0.1:8741/api/status 2>/dev/null; then
   sleep 999999 &

@@ -333,12 +333,16 @@ def gamdl_binary() -> str | None:
 
 
 # Cache the version so /api/status doesn't spawn a subprocess on every poll.
+# 30 min: the installed CLI's version can't change while the app is running,
+# and /api/status is polled constantly — a 30s TTL re-ran 3 subprocesses
+# (~3.5s stall) roughly every 30 seconds.
 _VERSION_CACHE: dict = {"value": None, "at": 0.0}
+_VERSION_TTL = 30 * 60.0
 
 
 def gamdl_version() -> str | None:
     now = time.time()
-    if _VERSION_CACHE["value"] is not None and now - _VERSION_CACHE["at"] < 30:
+    if _VERSION_CACHE["value"] is not None and now - _VERSION_CACHE["at"] < _VERSION_TTL:
         return _VERSION_CACHE["value"]
     binary = gamdl_binary() or "gamdl"
     try:
@@ -386,7 +390,10 @@ def spotify_binary() -> str | None:
 
 
 # Small per-tool version cache so /api/status polls don't spawn subprocesses.
+# 30 min TTL — the tools' versions can't change mid-session, and /api/status
+# is polled constantly (a 30s TTL meant ~1.8s of subprocess calls every 30s).
 _TOOL_VERSIONS: dict = {}  # name -> (version, cached_at)
+_TOOL_VERSION_TTL = 30 * 60.0
 
 
 def _cli_version(name: str, binary: str | None) -> str | None:
@@ -394,7 +401,7 @@ def _cli_version(name: str, binary: str | None) -> str | None:
         return None
     now = time.time()
     cached = _TOOL_VERSIONS.get(name)
-    if cached and now - cached[1] < 30:
+    if cached and now - cached[1] < _TOOL_VERSION_TTL:
         return cached[0]
     try:
         out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=10)
@@ -1052,6 +1059,40 @@ def delta_filter_urls(config: Config, urls: list[str]) -> tuple[list[str], int]:
         else:
             out.extend(f"{base}{t['source_id']}" for t in keep if t.get("source_id"))
     return out, skipped
+
+
+# ---------------------------------------------------------------------------
+# Known cryptic engine errors → plain-English hint appended to the job log
+# ---------------------------------------------------------------------------
+# Signature: substrings that must ALL appear in the job log (case-insensitive)
+# to trigger the hint. Kept small and specific so we never misfire on an
+# unrelated failure — each entry is a real Apple error users have hit.
+_KNOWN_ERROR_HINTS: list[tuple[tuple[str, ...], str]] = [
+    (
+        ("playback_dispatch_failed", "error code=-13305880"),
+        "Apple's store refused to dispatch playback for this track "
+        "(playback_dispatch_failed, store error -13305880). This is "
+        "Apple-side, not an app bug: the track usually isn't available for "
+        "your account in its region/storefront, or the wrapper's login has "
+        "gone stale. Try re-logging in from the '5 · Wrapper & login' panel, "
+        "then hit ↻ Retry — if other tracks download fine, this one is simply "
+        "restricted for your account.",
+    ),
+]
+
+
+def _append_known_error_hint(job: "Job") -> None:
+    """If the job's log matches a known cryptic error, append a plain-English
+    hint (once per job) so the failure means something to the user."""
+    if getattr(job, "_error_hints_added", None) is None:
+        job._error_hints_added = set()
+    text = " ".join(e.get("text", "") for e in job.log).lower()
+    for signatures, hint in _KNOWN_ERROR_HINTS:
+        if hint in job._error_hints_added:
+            continue
+        if all(s.lower() in text for s in signatures):
+            job.add_line("Hint: " + hint)
+            job._error_hints_added.add(hint)
 
 
 # ---------------------------------------------------------------------------
@@ -1757,6 +1798,7 @@ def run_job(job: Job, env: dict | None = None) -> None:
         if has_error:
             # Fall through to the retry/backoff logic below (same as a gamdl
             # non-zero exit): a transient engine failure respects auto_retry.
+            _append_known_error_hint(job)
             job.add_line("WARNING: no new files appeared — the engine reported errors above, so nothing was downloaded.")
             job.exit_code = 1
         else:
@@ -1774,11 +1816,17 @@ def run_job(job: Job, env: dict | None = None) -> None:
     job.attempts += 1
     max_retries = int(job.config.get("auto_retry") or 0)
     if job.attempts <= max_retries:
+        # Surface a known-error hint on the FIRST failure (not only after all
+        # retries are exhausted) so the user can act — e.g. re-login — while
+        # the backoff runs. _append_known_error_hint dedupes across attempts.
+        _append_known_error_hint(job)
         delay = [60, 300, 900][min(job.attempts - 1, 2)]
         job.add_line(f"Attempt {job.attempts} failed (exit {job.exit_code}) — retrying in {delay // 60} min…")
         job._retry_delay = delay
         return  # slot released; _dispatch sleeps the backoff, then re-runs us
     job.add_line(f"{tool} exited with code {job.exit_code} (after {job.attempts} attempts).")
+    # Turn cryptic engine tracebacks into actionable hints (once per job).
+    _append_known_error_hint(job)
     job.set_status("failed")
     if job.manager:
         job.manager._finish(job)

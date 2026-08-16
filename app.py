@@ -111,7 +111,7 @@ PORT = int(os.environ.get("MHR_PORT", "8741"))
 HOST = "127.0.0.1"
 # Keep in lockstep with the CHANGELOG heading (e.g. "[2.1.5] - 2026-08-11")
 # when cutting the next release.
-VERSION = "2.1.5"
+VERSION = "2.1.6"
 
 # GitHub repo used by the in-app self-updater (/api/update/*).
 GITHUB_REPO = "ZeroIndents/AppleMusic-Song-Downloader"
@@ -315,7 +315,7 @@ _WRAPPER_OK_CACHE: dict = {"value": False, "at": 0.0}
 def _wrapper_ok() -> bool:
     """Is the active Apple wrapper genuinely ready for ALAC/Atmos?
 
-    Cached for 3s — /api/status is polled constantly and a wrapper HTTP call
+    Cached for 15s — /api/status is polled constantly and a wrapper HTTP call
     per poll would stall the UI when the wrapper is slow/unresponsive.
     Semantics per engine: gamdl wrapper is ready when reachable AND logged in
     (auth_state == "authenticated"); the amdl wrapper is ready when its
@@ -323,7 +323,7 @@ def _wrapper_ok() -> bool:
     """
     import time as _t
     now = _t.time()
-    if now - _WRAPPER_OK_CACHE["at"] < 3.0:
+    if now - _WRAPPER_OK_CACHE["at"] < 15.0:
         return _WRAPPER_OK_CACHE["value"]
     ok = False
     if _amdl_mode():
@@ -671,31 +671,42 @@ def api_hooks_test():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "url": url}), 502
 
+
+@app.post("/api/scan-hook")
+def api_scan_hook():
+    """Trigger the configured media-server scan / rescan webhook right now.
+
+    Shared by the UI's 'Scan now' button and the /api/hooks/test scan target.
+    Mirrors _fire_scan_hook_async's request logic: media-server preset first,
+    then the raw scan-hook URL.
+    """
+    import urllib.request as _urlreq
     preset = server_scan_request(config)
     if preset:
         method, url, headers, body = preset
-        import urllib.request as _urlreq
-        import json as _json
         try:
-            data = _json.dumps(body).encode() if method == "POST" else None
-            req = _urlreq.Request(url, data=data, headers={k: v for k, v in headers.items() if v}, method=method)
+            data = json.dumps(body).encode() if method == "POST" else None
+            req = _urlreq.Request(url, data=data,
+                                  headers={k: v for k, v in headers.items() if v},
+                                  method=method)
             with _urlreq.urlopen(req, timeout=8):
                 pass
         except OSError as e:
             return jsonify({"ok": False, "error": f"Scan request failed: {e}"}), 502
-        return jsonify({"ok": True, "server": config.get("server_type")})
+        return jsonify({"ok": True, "target": config.get("server_type"), "url": url})
     hook = str(config.get("scan_hook_url") or "").strip()
     if not hook:
         return jsonify({"ok": False, "error": "No media server configured (Settings → Media server) and no scan-hook URL."}), 400
-    import urllib.request as _urlreq
     try:
         body = json.dumps({"event": "rescan", "source": "music-high-res"}).encode()
-        req = _urlreq.Request(hook, data=body, headers={"Content-Type": "application/json", "User-Agent": "music-high-res"}, method="POST")
+        req = _urlreq.Request(hook, data=body,
+                              headers={"Content-Type": "application/json", "User-Agent": "music-high-res"},
+                              method="POST")
         with _urlreq.urlopen(req, timeout=8):
             pass
     except OSError as e:
         return jsonify({"ok": False, "error": f"Hook failed: {e}"}), 502
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "target": "hook", "url": hook})
 
 
 @app.get("/api/library/album/source")
@@ -1967,6 +1978,7 @@ def api_wrapper():
 
 @app.post("/api/wrapper/2fa")
 def api_wrapper_2fa():
+    _WRAPPER_OK_CACHE.update(value=False, at=0.0)  # refresh the status pill right away
     body = request.get_json(silent=True) or {}
     code = str(body.get("code") or "").strip()
     if _amdl_mode():
@@ -1978,6 +1990,7 @@ def api_wrapper_2fa():
 
 @app.post("/api/wrapper/restart")
 def api_wrapper_restart():
+    _WRAPPER_OK_CACHE.update(value=False, at=0.0)  # refresh the status pill right away
     if _amdl_mode():
         return jsonify(wrapperctl.amdl_restart_login())
     return jsonify(wrapperctl.restart_login())
@@ -2032,6 +2045,7 @@ def api_wrapper_setup_start():
 @app.post("/api/wrapper/login")
 def api_wrapper_login():
     """Save Apple ID credentials and restart the wrapper login (no Terminal)."""
+    _WRAPPER_OK_CACHE.update(value=False, at=0.0)  # refresh the status pill right away
     body = request.get_json(silent=True) or {}
     email = str(body.get("email") or "").strip()
     password = str(body.get("password") or "")
@@ -2084,6 +2098,9 @@ def api_url_preview():
         return jsonify(result)
     except Exception as e:  # network / parse hiccups
         return jsonify({"ok": False, "error": f"Could not preview that link: {e}"}), 502
+
+
+@app.post("/api/migrate/preview")
 def api_migrate_preview():
     """Resolve a Spotify / YouTube Music link and match its tracks on Apple Music."""
     body = request.get_json(silent=True) or {}
@@ -2525,10 +2542,23 @@ def _serve_with_retry(serve_fn) -> None:
             _t.sleep(2)
 
 
+def _warm_status_caches() -> None:
+    """Pre-fill the /api/status caches in the background so the first status
+    poll doesn't block the UI for seconds on a cold start (GitHub release
+    check + the gamdl/gytmdl/votify --version subprocesses)."""
+    gamdl_latest_version()
+    gamdl_version()
+    ytm_version()
+    spotify_version()
+
+
 def main():
     setup_logging()
     log = logging.getLogger("app")
     log.info("Music High Res server starting on http://%s:%s (log → %s)", HOST, PORT, LOG_DIR / "app.log")
+    # Warm the /api/status caches (GitHub release check + CLI version
+    # subprocesses) so the first poll doesn't block the UI for seconds.
+    threading.Thread(target=_warm_status_caches, daemon=True).start()
     # Re-queue downloads that were interrupted by a previous shutdown.
     restored = manager.restore_pending()
     if restored:

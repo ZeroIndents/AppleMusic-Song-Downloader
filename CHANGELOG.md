@@ -11,6 +11,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Z** on a minor fix. (The former 1.3.0 release was renamed to 2.0.0 when this
 scheme landed.)
 
+## [2.1.6] - 2026-08-13
+
+### Changed
+- **Library toolbar decluttered** — the Library card no longer shows 20+ buttons
+  in one wrapping row. The essentials stay visible (Search, Releases, Import,
+  Backup, Refresh) and the rest move into an iOS-style **⋯ More sidebar**:
+  grouped rows with icon tiles (Duplicate & cleanup / Improve quality /
+  Stats & history / Playlists & lists / Export & system) that slides in from
+  the right, closes via ✕, the backdrop, Escape, or by running a tool.
+
+### Fixed
+- **Launching the .app again while it's open did nothing ("logo hops once,
+  then nothing")** — closing the app window used to leave the app running in
+  the background, and macOS treats an app as a single instance, so re-clicking
+  the icon just activated the zombie and the fresh-session restart never ran.
+  The app now behaves like a normal Mac app: the app-style window is launched
+  as a direct child process of the launcher, and **closing the window quits
+  the app completely** (server stopped, ALAC wrapper stopped, port freed).
+  Re-clicking the icon therefore always boots a fresh session and the window
+  pops up every time. The `.app` launcher is now a small compiled Mach-O
+  binary (built by `make_app.sh`, shell-script fallback if `cc` is missing)
+  for reliable LaunchServices launching.
+- **Downloads failing with Apple's `playback_dispatch_failed` / store error
+  `-13305880` now explain themselves** — that cryptic gamdl traceback meant
+  Apple refused to dispatch playback for the track (usually not available
+  for your account's region/storefront, or a stale wrapper login). The job
+  log now appends a plain-English hint with next steps instead of ending on
+  the raw traceback.
+
 ## [2.1.5] - 2026-08-11
 
 ### Changed
